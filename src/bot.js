@@ -180,7 +180,13 @@ class AuraClient extends discord_js_1.Client {
                 if (guild)
                     guild.shard.send(payload);
             }
-        }, new shoukaku_1.Connectors.DiscordJS(this), Nodes);
+        }, new shoukaku_1.Connectors.DiscordJS(this), Nodes, {
+            // Auto-retry a disconnected Lavalink node: up to 5 attempts total, ~15s apart
+            // (so 3 attempts land inside the first minute), then Shoukaku gives up and
+            // emits 'disconnect' — handled/logged in MusicHandler.
+            reconnectTries: parseInt(process.env.LAVALINK_RECONNECT_TRIES || '5', 10),
+            reconnectInterval: parseInt(process.env.LAVALINK_RECONNECT_INTERVAL || '15000', 10)
+        });
         this.musicHandler.load();
     }
 }

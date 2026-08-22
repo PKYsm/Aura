@@ -115,7 +115,7 @@ exports.default = {
             return;
         if (command.prefixExecute) {
             try {
-                logger_1.Logger.logCommand(message.author, message.guild, commandName, 'Prefix');
+                logger_1.Logger.logCommand(message.author, message.guild, commandName, 'Prefix', message.content);
                 await command.prefixExecute(client, message, args);
             }
             catch (e) {
@@ -157,7 +157,7 @@ exports.default = {
                 }
             };
             try {
-                logger_1.Logger.logCommand(message.author, message.guild, commandName, 'Prefix');
+                logger_1.Logger.logCommand(message.author, message.guild, commandName, 'Prefix', message.content);
                 await command.execute(fakeInteraction, client);
             }
             catch (e) {

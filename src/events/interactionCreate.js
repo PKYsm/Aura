@@ -17,7 +17,9 @@ exports.default = {
             if (!command)
                 return;
             try {
-                logger_1.Logger.logCommand(interaction.user, interaction.guild, interaction.commandName, 'Slash');
+                const optsStr = interaction.options.data.map(o => `${o.name}:${o.value}`).join(' ');
+                const rawInput = `/${interaction.commandName}${optsStr ? ' ' + optsStr : ''}`;
+                logger_1.Logger.logCommand(interaction.user, interaction.guild, interaction.commandName, 'Slash', rawInput);
                 await command.execute(interaction, client);
             }
             catch (err) {

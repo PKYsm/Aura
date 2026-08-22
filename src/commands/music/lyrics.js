@@ -75,7 +75,8 @@ function renderSynced(cacheKey, data, client, guildId) {
     const end = Math.min(data.synced.length, idx + WINDOW_SIZE + 1);
     const rendered = data.synced.slice(start, end).map((line, i) => {
         const realIdx = start + i;
-        return realIdx === idx ? `**${emojis_1.default.lyrics.sync} ${line.text}**` : line.text;
+        //*return realIdx === idx ? `**${emojis_1.default.lyrics.sync} ${line.text}**` : line.text;*/
+        return realIdx === idx ? `> \`  ➤  ${line.text} \`` : `> \`  ${line.text} \``;
     }).join('\n');
     const c = (0, containers_1.container)(`${rendered}\n\n${FOOTER}`, {
         title: `${emojis_1.default.lyrics.mic} ${shortenTitle(data.meta.title)}${data.meta.artist ? ` — ${data.meta.artist}` : ''}`,
