@@ -3,23 +3,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.switchMode = switchMode;
 exports.buildFullTextView = buildFullTextView;
 exports.attachLiveMessage = attachLiveMessage;
+exports.deleteLyricsSession = deleteLyricsSession;
+exports.endLyricsSessions = endLyricsSessions;
 const discord_js_1 = require("discord.js");
 const containers_1 = require("../../ui/containers");
 const lyrics_1 = require("../../utils/lyrics");
-const emojis_1 = require("../../utils/emojis");
 const botInfo_1 = require("../../config/botInfo");
 
-const WINDOW_SIZE = 4;          // synced-mode: lines shown above/below the active line
+const WINDOW_SIZE = 5;          // synced-mode: lines shown above/below the active line (>=10 lines total mid-song)
 const FULL_TEXT_CHUNK = 12;     // full-text mode: lines per page
 const MAX_TITLE_LEN = 40;       // shortened track name length
 const CACHE_TTL = 1800;         // seconds — refreshed on every interaction/tick while a session is alive
-const SYNC_INTERVAL_MS = 3000;  // how often the live synced view re-checks playback position
+const SYNC_INTERVAL_MS = 2000;  // how often the live synced view re-checks playback position
+const SYNC_OFFSET_MS = 3000;    // nudges lyric lookup this far ahead of raw playback position to cancel out source delay
 
 const FOOTER = `-# ${botInfo_1.botName} • by ${botInfo_1.developer.name}`;
 
+/** Strips hashtags and @mentions out of a track title before it's ever shown. */
+function cleanDisplayTitle(title) {
+    if (!title) return '';
+    return title
+        .replace(/<@!?\d+>/g, '')
+        .replace(/#\S+/g, '')
+        .replace(/@\S+/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
 function shortenTitle(title) {
-    if (!title) return 'Unknown Track';
-    return title.length > MAX_TITLE_LEN ? `${title.slice(0, MAX_TITLE_LEN - 1).trim()}…` : title;
+    const clean = cleanDisplayTitle(title) || 'Unknown Track';
+    return clean.length > MAX_TITLE_LEN ? `${clean.slice(0, MAX_TITLE_LEN - 1).trim()}…` : clean;
 }
 
 function trackKeyOf(track) {
@@ -39,70 +52,102 @@ function isLiveEligible(data, client, guildId) {
     if (!data.synced.length) return false;
     const player = client.music?.players?.get(guildId);
     const current = player?.queue?.current;
-    if (!current || !player.playing) return false;
+    if (!current) return false;
     return trackKeyOf(current) === data.meta.trackKey;
 }
 
-function buildModeSelectRow(cacheKey, data, syncEligible) {
-    const options = [];
-    if (syncEligible) {
-        options.push({ label: 'Synced Lyrics', description: 'Auto-follows the currently playing track', value: 'sync', emoji: emojis_1.default.lyrics.sync, default: data.mode === 'sync' });
-    }
-    options.push({ label: 'Full Text', description: `All lyrics, ${data.fullPages.length} page(s)`, value: 'full', emoji: emojis_1.default.lyrics.full, default: data.mode === 'full' || !syncEligible });
-    const select = new discord_js_1.StringSelectMenuBuilder()
-        .setCustomId(`AuraX:lyrics_mode:${cacheKey}`)
-        .setPlaceholder('View mode…')
-        .addOptions(options);
-    return new discord_js_1.ActionRowBuilder().addComponents(select);
+/** Track title as a clickable link (falls back to plain text when there's no URI). */
+function titleLine(data) {
+    const label = shortenTitle(data.meta.title);
+    const linked = data.meta.uri ? `[${label}](${data.meta.uri})` : label;
+    return data.meta.artist ? `${linked} — ${data.meta.artist}` : linked;
 }
 
-function buildPageSelectRow(cacheKey, data) {
-    const total = data.fullPages.length;
-    const options = [];
-    for (let i = 0; i < Math.min(total, 25); i++) {
-        options.push({ label: `Page ${i + 1} / ${total}`, value: String(i), emoji: emojis_1.default.lyrics.page, default: i === data.fullPage });
+function formatTime(ms) {
+    const totalSec = Math.max(0, Math.floor((ms || 0) / 1000));
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function progressBar(position, duration, size = 15) {
+    if (!duration) return '';
+    const ratio = Math.min(Math.max(position / duration, 0), 1);
+    const knobPos = Math.min(size - 1, Math.round(ratio * (size - 1)));
+    let bar = '';
+    for (let i = 0; i < size; i++) {
+        if (i < knobPos) bar += '━';
+        else if (i === knobPos) bar += '〇';
+        else bar += '┄';
     }
-    const select = new discord_js_1.StringSelectMenuBuilder()
-        .setCustomId(`AuraX:lyrics_page:${cacheKey}`)
-        .setPlaceholder(`Page ${data.fullPage + 1} of ${total}`)
-        .addOptions(options);
-    return new discord_js_1.ActionRowBuilder().addComponents(select);
+    return bar;
 }
 
 function renderSynced(cacheKey, data, client, guildId) {
-    const idx = Math.max(0, (0, lyrics_1.getCurrentLineIndex)(data.synced, client.music?.players?.get(guildId)?.position || 0));
+    const player = client.music?.players?.get(guildId);
+    const position = player?.position || 0;
+    const duration = player?.queue?.current?.length || data.meta.durationMs || 0;
+    const idx = Math.max(0, (0, lyrics_1.getCurrentLineIndex)(data.synced, position + SYNC_OFFSET_MS));
     const start = Math.max(0, idx - WINDOW_SIZE);
     const end = Math.min(data.synced.length, idx + WINDOW_SIZE + 1);
     const rendered = data.synced.slice(start, end).map((line, i) => {
         const realIdx = start + i;
-        //*return realIdx === idx ? `**${emojis_1.default.lyrics.sync} ${line.text}**` : line.text;*/
-        return realIdx === idx ? `> \`  ➤  ${line.text} \`` : `> \`  ${line.text} \``;
+        return realIdx === idx ? `> **__${line.text}__**` : `> ${line.text}`;
     }).join('\n');
-    const c = (0, containers_1.container)(`${rendered}\n\n${FOOTER}`, {
-        title: `${emojis_1.default.lyrics.mic} ${shortenTitle(data.meta.title)}${data.meta.artist ? ` — ${data.meta.artist}` : ''}`,
-    });
-    c.addActionRowComponents(buildModeSelectRow(cacheKey, data, true));
-    return c;
+
+    const lines = [`## ${titleLine(data)}`];
+    if (duration) {
+        lines.push(`${formatTime(position)} \`${progressBar(position, duration)}\` ${formatTime(duration)}`);
+    }
+    lines.push('', rendered, '', FOOTER);
+
+    return (0, containers_1.container)(lines.join('\n'));
 }
 
 function renderFullText(cacheKey, data, client, guildId) {
-    const syncEligible = isLiveEligible(data, client, guildId);
+    const total = data.fullPages.length;
     const page = data.fullPages[data.fullPage];
-    const c = (0, containers_1.container)(`${page}\n\n${FOOTER}`, {
-        title: `${emojis_1.default.lyrics.mic} ${shortenTitle(data.meta.title)}${data.meta.artist ? ` — ${data.meta.artist}` : ''}`,
-    });
-    c.addActionRowComponents(buildModeSelectRow(cacheKey, data, syncEligible));
-    if (data.fullPages.length > 1) {
-        c.addActionRowComponents(buildPageSelectRow(cacheKey, data));
+    const headerBits = [`__${titleLine(data)}__`];
+    if (total > 1) headerBits.push(`Page ${data.fullPage + 1}/${total}`);
+    const content = `${headerBits.join('  •  ')}\n\n${page}\n\n${FOOTER}`;
+    const c = (0, containers_1.container)(content);
+
+    const syncEligible = isLiveEligible(data, client, guildId);
+    const buttons = [
+        new discord_js_1.ButtonBuilder()
+            .setCustomId(`AuraX:lyrics_prev_page:${cacheKey}`)
+            .setLabel('◀')
+            .setStyle(discord_js_1.ButtonStyle.Secondary)
+            .setDisabled(total <= 1 || data.fullPage <= 0),
+    ];
+    if (syncEligible) {
+        buttons.push(new discord_js_1.ButtonBuilder()
+            .setCustomId(`AuraX:lyrics_sync:${cacheKey}`)
+            .setLabel('Sync Lyrics')
+            .setStyle(discord_js_1.ButtonStyle.Primary));
     }
+    buttons.push(new discord_js_1.ButtonBuilder()
+        .setCustomId(`AuraX:lyrics_delete:${cacheKey}`)
+        .setLabel('Delete')
+        .setStyle(discord_js_1.ButtonStyle.Danger));
+    buttons.push(new discord_js_1.ButtonBuilder()
+        .setCustomId(`AuraX:lyrics_next_page:${cacheKey}`)
+        .setLabel('▶')
+        .setStyle(discord_js_1.ButtonStyle.Secondary)
+        .setDisabled(total <= 1 || data.fullPage >= total - 1));
+
+    c.addActionRowComponents(new discord_js_1.ActionRowBuilder().addComponents(...buttons));
     return c;
 }
 
-function renderEnded(title, artist, reasonText) {
-    return (0, containers_1.container)(`${emojis_1.default.lyrics.ended} ${reasonText}\n\n${FOOTER}`, {
-        title: `${emojis_1.default.lyrics.mic} ${shortenTitle(title)}${artist ? ` — ${artist}` : ''}`,
-        color: 'warning',
-    });
+/** No track heading — matches the "cleared" state shown once a synced session is no longer valid. */
+function renderEnded(reasonText) {
+    const c = new discord_js_1.ContainerBuilder();
+    c.setAccentColor(containers_1.THEME_COLOR);
+    c.addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent('**Synced lyrics cleared**'));
+    c.addSeparatorComponents(new discord_js_1.SeparatorBuilder());
+    c.addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent(`-# reason \`${reasonText}\``));
+    return c;
 }
 
 function renderView(cacheKey, data, client, guildId) {
@@ -114,7 +159,7 @@ function renderView(cacheKey, data, client, guildId) {
 /** Persists the requested mode (falling back to Full Text if Sync isn't currently eligible) and renders it. */
 function switchMode(cacheKey, requestedMode, client, guildId) {
     const data = client.cache.get(cacheKey);
-    if (!data) return { expired: true, container: (0, containers_1.error)('This lyrics session expired. Run `/lyrics` again.') };
+    if (!data) return { expired: true, container: (0, containers_1.container)('This lyrics session expired. Run `/lyrics` again.') };
     data.mode = (requestedMode === 'sync' && isLiveEligible(data, client, guildId)) ? 'sync' : 'full';
     client.cache.set(cacheKey, data, CACHE_TTL);
     if (data.mode !== 'sync') {
@@ -125,7 +170,7 @@ function switchMode(cacheKey, requestedMode, client, guildId) {
 
 function buildFullTextView(cacheKey, pageIndex, client) {
     const data = client.cache.get(cacheKey);
-    if (!data) return { expired: true, container: (0, containers_1.error)('This lyrics session expired. Run `/lyrics` again.') };
+    if (!data) return { expired: true, container: (0, containers_1.container)('This lyrics session expired. Run `/lyrics` again.') };
     data.fullPage = Math.max(0, Math.min(pageIndex, data.fullPages.length - 1));
     data.mode = 'full';
     client.cache.set(cacheKey, data, CACHE_TTL);
@@ -143,26 +188,52 @@ function stopLiveSession(client, guildId, cacheKey) {
     }
 }
 
+/** Deletes the cached lyrics session (used by the Delete button). Message deletion is the caller's job. */
+function deleteLyricsSession(cacheKey, client, guildId) {
+    stopLiveSession(client, guildId, cacheKey);
+    client.cache.del(cacheKey);
+}
+
+/** Ends every live synced session in a guild — call on track end, skip, previous, or bot disconnect. */
+async function endLyricsSessions(client, guildId, reasonText) {
+    const guildMap = client.lyricSyncSessions.get(guildId);
+    if (!guildMap || !guildMap.size) return;
+    const sessions = Array.from(guildMap.values());
+    guildMap.clear();
+    for (const session of sessions) {
+        clearInterval(session.intervalId);
+        client.cache.del(session.cacheKey);
+        await session.message.edit((0, containers_1.cv2)(renderEnded(reasonText))).catch(() => { });
+    }
+}
+
 async function tick(client, guildId, messageId) {
     const guildMap = client.lyricSyncSessions.get(guildId);
     const session = guildMap?.get(messageId);
     if (!session) return;
     const player = client.music?.players?.get(guildId);
     const current = player?.queue?.current;
-    if (!player || !current || !player.playing || trackKeyOf(current) !== session.trackKey) {
+
+    let reason = null;
+    if (!player) reason = 'Bot left the voice channel — synced lyrics session closed.';
+    else if (!current) reason = 'Queue ended — synced lyrics session closed.';
+    else if (trackKeyOf(current) !== session.trackKey) reason = 'Track changed — synced lyrics session closed.';
+
+    if (reason) {
         clearInterval(session.intervalId);
         guildMap.delete(messageId);
-        session.message.edit((0, containers_1.cv2)(renderEnded(session.title, session.artist, 'Track ended — synced lyrics session closed.'))).catch(() => { });
         client.cache.del(session.cacheKey);
+        await session.message.edit((0, containers_1.cv2)(renderEnded(reason))).catch(() => { });
         return;
     }
+
     const data = client.cache.get(session.cacheKey);
     if (!data) {
         clearInterval(session.intervalId);
         guildMap.delete(messageId);
         return;
     }
-    const idx = (0, lyrics_1.getCurrentLineIndex)(data.synced, player.position);
+    const idx = (0, lyrics_1.getCurrentLineIndex)(data.synced, player.position + SYNC_OFFSET_MS);
     if (idx === session.lastIndex) return;
     session.lastIndex = idx;
     client.cache.set(session.cacheKey, data, CACHE_TTL);
@@ -189,9 +260,7 @@ function attachLiveMessage(cacheKey, client, message) {
         cacheKey,
         trackKey: data.meta.trackKey,
         message,
-        title: data.meta.title,
-        artist: data.meta.artist,
-        lastIndex: (0, lyrics_1.getCurrentLineIndex)(data.synced, client.music?.players?.get(guildId)?.position || 0),
+        lastIndex: (0, lyrics_1.getCurrentLineIndex)(data.synced, (client.music?.players?.get(guildId)?.position || 0) + SYNC_OFFSET_MS),
     };
     session.intervalId = setInterval(() => tick(client, guildId, message.id), SYNC_INTERVAL_MS);
     guildMap.set(message.id, session);
@@ -219,7 +288,7 @@ exports.default = {
         const guildId = context.guildId;
         const player = client.music?.players?.get(guildId);
 
-        let title, artist, durationMs;
+        let title, artist, durationMs, uri;
         if (songQuery) {
             title = songQuery;
             artist = '';
@@ -228,13 +297,13 @@ exports.default = {
             title = player.queue.current.title;
             artist = player.queue.current.author || '';
             durationMs = player.queue.current.length;
+            uri = player.queue.current.uri;
         }
         else {
-            const c = (0, containers_1.container)('Nothing is playing right now. Search for a song to see its lyrics — synced mode will only be available once it\'s actually playing.', { title: `${emojis_1.default.lyrics.mic} Lyrics` });
+            const c = (0, containers_1.container)('Nothing is playing right now. Search for a song to see its lyrics — synced mode will only be available once it\'s actually playing.', { title: 'Lyrics' });
             const row = new discord_js_1.ActionRowBuilder().addComponents(new discord_js_1.ButtonBuilder()
                 .setCustomId('AuraX:lyrics_search_btn')
                 .setLabel('Search Lyrics')
-                .setEmoji(emojis_1.default.lyrics.search)
                 .setStyle(discord_js_1.ButtonStyle.Secondary));
             c.addActionRowComponents(row);
             return reply((0, containers_1.cv2)(c));
@@ -242,7 +311,7 @@ exports.default = {
 
         const result = await (0, lyrics_1.fetchLyrics)(title, artist, durationMs);
         if (!result) {
-            return reply((0, containers_1.cv2)((0, containers_1.error)(`No lyrics found for **${shortenTitle(title)}**${artist ? ` by **${artist}**` : ''}.`)));
+            return reply((0, containers_1.cv2)((0, containers_1.container)(`No lyrics found for **${shortenTitle(title)}**${artist ? ` by **${artist}**` : ''}.`)));
         }
 
         const trackKey = `${title}::${artist}`;
@@ -253,7 +322,7 @@ exports.default = {
         const cacheKey = `lyrics_${guildId || context.channelId}_${Date.now()}`;
         const liveNow = player?.queue?.current && trackKeyOf(player.queue.current) === trackKey;
         const data = {
-            meta: { title, artist, trackKey, guildId },
+            meta: { title, artist, uri, durationMs, trackKey, guildId },
             synced: result.synced,
             fullPages,
             fullPage: 0,

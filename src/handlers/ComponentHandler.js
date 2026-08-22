@@ -244,6 +244,43 @@ class ComponentHandler {
                 modal.addComponents(new discord_js_1.ActionRowBuilder().addComponents(songInput));
                 return interaction.showModal(modal);
             }
+            if (action === 'lyrics_sync') {
+                const cacheKey = parts[2];
+                const result = (0, lyrics_2.switchMode)(cacheKey, 'sync', this.client, interaction.guildId);
+                if (result.expired) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)(result.container));
+                    return;
+                }
+                await interaction.update((0, containers_1.cv2)(result.container));
+                const sent = await interaction.fetchReply().catch(() => null);
+                (0, lyrics_2.attachLiveMessage)(cacheKey, this.client, sent);
+                return;
+            }
+            if (action === 'lyrics_prev_page' || action === 'lyrics_next_page') {
+                const cacheKey = parts[2];
+                const cached = this.client.cache.get(cacheKey);
+                if (!cached) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.container)('This lyrics session expired. Run `/lyrics` again.')));
+                    return;
+                }
+                const nextPage = cached.fullPage + (action === 'lyrics_next_page' ? 1 : -1);
+                const view = (0, lyrics_2.buildFullTextView)(cacheKey, nextPage, this.client);
+                if (view.expired) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)(view.container));
+                    return;
+                }
+                await interaction.update((0, containers_1.cv2)(view.container));
+                return;
+            }
+            if (action === 'lyrics_delete') {
+                const cacheKey = parts[2];
+                const cached = this.client.cache.get(cacheKey);
+                const guildId = cached?.meta?.guildId || interaction.guildId;
+                (0, lyrics_2.deleteLyricsSession)(cacheKey, this.client, guildId);
+                await interaction.deferUpdate().catch(() => { });
+                await interaction.message.delete().catch(() => { });
+                return;
+            }
             const musicActions = ['pause', 'skip', 'prev', 'rewind', 'forward', 'stop', 'loop', 'shuffle', 'autoplay', 'heart'];
             if (musicActions.includes(action) && !(0, checks_1.inSameVoiceChannel)(interaction)) {
                 await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('You must be in the same voice channel as me to use this.')));
@@ -292,11 +329,13 @@ class ComponentHandler {
                     if (is247) {
                         guildPlayer.player.queue.clear();
                         guildPlayer.player.shoukaku.stopTrack();
+                        await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Playback stopped — synced lyrics session closed.');
                         await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)('Stopped music and cleared queue.'))).catch(() => { });
                     }
                     else {
                         guildPlayer.player.destroy();
                         this.client.guildPlayers.delete(interaction.guildId);
+                        await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Bot left the voice channel — synced lyrics session closed.');
                         await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)('Stopped music and left channel.'))).catch(() => { });
                     }
                     return;
@@ -374,32 +413,6 @@ class ComponentHandler {
         try {
             const parts = interaction.customId.split(':');
             const action = parts[1];
-            if (action === 'lyrics_mode') {
-                const cacheKey = parts[2];
-                const chosenMode = interaction.values[0];
-                const result = (0, lyrics_2.switchMode)(cacheKey, chosenMode, this.client, interaction.guildId);
-                if (result.expired) {
-                    await interaction.reply((0, containers_1.ephemeralCV2)(result.container));
-                    return;
-                }
-                await interaction.update((0, containers_1.cv2)(result.container));
-                const sent = await interaction.fetchReply().catch(() => null);
-                (0, lyrics_2.attachLiveMessage)(cacheKey, this.client, sent);
-                return;
-            }
-            if (action === 'lyrics_page') {
-                const cacheKey = parts[2];
-                const pageIndex = parseInt(interaction.values[0], 10) || 0;
-                const view = (0, lyrics_2.buildFullTextView)(cacheKey, pageIndex, this.client);
-                if (view.expired) {
-                    await interaction.reply((0, containers_1.ephemeralCV2)(view.container));
-                    return;
-                }
-                await interaction.update((0, containers_1.cv2)(view.container));
-                const sent = await interaction.fetchReply().catch(() => null);
-                (0, lyrics_2.attachLiveMessage)(cacheKey, this.client, sent);
-                return;
-            }
             if (action === 'filter_select' || action === 'filterSet') {
                 if (!(0, checks_1.inSameVoiceChannel)(interaction)) {
                     await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('You must be in the same voice channel as me to use this.')));

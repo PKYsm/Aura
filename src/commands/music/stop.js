@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const discord_js_1 = require("discord.js");
 const containers_1 = require("../../ui/containers");
+const lyrics_1 = require("./lyrics");
 exports.default = {
     data: new discord_js_1.SlashCommandBuilder()
         .setName('stop')
@@ -33,10 +34,12 @@ exports.default = {
             if (is247) {
                 player.queue.clear();
                 player.shoukaku.stopTrack();
+                await (0, lyrics_1.endLyricsSessions)(client, context.guildId, 'Playback stopped — synced lyrics session closed.');
                 await reply((0, containers_1.cv2)((0, containers_1.container)('Stopped the music and cleared the queue. (24/7 Mode Active)', { title: 'Aura Music', color: 'success' })));
             }
             else {
                 player.destroy();
+                await (0, lyrics_1.endLyricsSessions)(client, context.guildId, 'Bot left the voice channel — synced lyrics session closed.');
                 await reply((0, containers_1.cv2)((0, containers_1.container)('Stopped the music and left the voice channel.', { title: 'Aura Music', color: 'success' })));
             }
         }

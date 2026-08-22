@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const voiceStatus_1 = require("../../utils/voiceStatus");
 const presence_1 = require("../../utils/presence");
+const lyrics_1 = require("../../commands/music/lyrics");
 exports.default = {
     name: 'playerEnd',
     emitter: 'music',
@@ -16,5 +17,6 @@ exports.default = {
         if (player.voiceId) {
             await (0, voiceStatus_1.setVoiceChannelStatus)(client, player.voiceId, "<a:music:1515753259636228166> Waiting for music...");
         }
+        await (0, lyrics_1.endLyricsSessions)(client, player.guildId, 'Track ended — synced lyrics session closed.');
     }
 };
