@@ -9,6 +9,7 @@ const discord_js_1 = require("discord.js");
 const containers_1 = require("../../ui/containers");
 const lyrics_1 = require("../../utils/lyrics");
 const botInfo_1 = require("../../config/botInfo");
+const format_1 = require("../../utils/format");
 
 const WINDOW_SIZE = 5;          // synced-mode: lines shown above/below the active line (>=10 lines total mid-song)
 const FULL_TEXT_CHUNK = 12;     // full-text mode: lines per page
@@ -87,26 +88,6 @@ function titleLine(data, includeArtist = true) {
     return (includeArtist && data.meta.artist) ? `${linked} — ${data.meta.artist}` : linked;
 }
 
-function formatTime(ms) {
-    const totalSec = Math.max(0, Math.floor((ms || 0) / 1000));
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function progressBar(position, duration, size = 15) {
-    if (!duration) return '';
-    const ratio = Math.min(Math.max(position / duration, 0), 1);
-    const knobPos = Math.min(size - 1, Math.round(ratio * (size - 1)));
-    let bar = '';
-    for (let i = 0; i < size; i++) {
-        if (i < knobPos) bar += '━';
-        else if (i === knobPos) bar += '〇';
-        else bar += '┄';
-    }
-    return bar;
-}
-
 function renderSynced(cacheKey, data, client, guildId, overridePosition) {
     const player = client.music?.players?.get(guildId);
     const position = overridePosition !== undefined ? overridePosition : (player?.position || 0);
@@ -128,10 +109,10 @@ function renderSynced(cacheKey, data, client, guildId, overridePosition) {
             : indentedChunks.map(c => `> ${c}`).join('\n');
     }).join('\n');
 
-    const lines = [`## ${titleLine(data, false)}`];
+    const lines = [`### ${titleLine(data, false)}`];
     if (duration) {
-        const barLine = `${formatTime(position)} \`${progressBar(position, duration)}\` ${formatTime(duration)}`;
-        lines.push(player?.paused ? `${barLine}  •\` Song Is Paused\`` : barLine);
+        const barLine = `> ${format_1.formatTime(position)} \`${format_1.progressBar(position, duration)}\` ${format_1.formatTime(duration)}`;
+        lines.push(player?.paused ? `${barLine} \` Song Is Paused\`` : barLine);
     }
     lines.push('', rendered);
 
@@ -157,12 +138,12 @@ function renderFullText(cacheKey, data, client, guildId) {
     if (syncEligible) {
         buttons.push(new discord_js_1.ButtonBuilder()
             .setCustomId(`AuraX:lyrics_sync:${cacheKey}`)
-            .setLabel('Sync Lyrics')
+            .setLabel('SYNCED')
             .setStyle(discord_js_1.ButtonStyle.Primary));
     }
     buttons.push(new discord_js_1.ButtonBuilder()
         .setCustomId(`AuraX:lyrics_delete:${cacheKey}`)
-        .setLabel('Delete')
+        .setLabel('CLOSE')
         .setStyle(discord_js_1.ButtonStyle.Danger));
     buttons.push(new discord_js_1.ButtonBuilder()
         .setCustomId(`AuraX:lyrics_next_page:${cacheKey}`)
