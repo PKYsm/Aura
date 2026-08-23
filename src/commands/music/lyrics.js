@@ -12,12 +12,13 @@ const botInfo_1 = require("../../config/botInfo");
 
 const WINDOW_SIZE = 5;          // synced-mode: lines shown above/below the active line (>=10 lines total mid-song)
 const FULL_TEXT_CHUNK = 12;     // full-text mode: lines per page
-const MAX_TITLE_LEN = 40;       // shortened track name length
+const MAX_TITLE_LEN = 30;       // shortened track name length
 const CACHE_TTL = 1800;         // seconds — refreshed on every interaction/tick while a session is alive
 const SYNC_INTERVAL_MS = 2000;  // how often the live synced view re-checks playback position
 const SYNC_OFFSET_MS = 3000;    // nudges lyric lookup this far ahead of raw playback position to cancel out source delay
 
 const FOOTER = `-# ${botInfo_1.botName} • by ${botInfo_1.developer.name}`;
+const SOURCE_LABELS = { youtube: 'YouTube', spotify: 'Spotify', soundcloud: 'SoundCloud', jiosaavn: 'JioSaavn', deezer: 'Deezer' };
 
 /** Strips hashtags and @mentions out of a track title before it's ever shown. */
 function cleanDisplayTitle(title) {
@@ -150,10 +151,38 @@ function renderEnded(reasonText) {
     return c;
 }
 
+/** First screen after `/lyrics` runs — title/artist/source plus an explicit Sync-vs-Static choice. */
+function renderChoice(cacheKey, data, client, guildId) {
+    const label = shortenTitle(data.meta.title);
+    const linked = data.meta.uri ? `[${label}](${data.meta.uri})` : label;
+    const lines = [
+        `## ${linked}`,
+        `> **Artist:** ${data.meta.artist || 'Unknown'}`,
+        `> **Source:** ${data.meta.source || 'Unknown'}`,
+        '',
+        FOOTER,
+    ];
+    const c = (0, containers_1.container)(lines.join('\n'));
+
+    const buttons = [];
+    if (isLiveEligible(data, client, guildId)) {
+        buttons.push(new discord_js_1.ButtonBuilder()
+            .setCustomId(`AuraX:lyrics_pick_sync:${cacheKey}`)
+            .setLabel('Sync Lyrics')
+            .setStyle(discord_js_1.ButtonStyle.Primary));
+    }
+    buttons.push(new discord_js_1.ButtonBuilder()
+        .setCustomId(`AuraX:lyrics_pick_full:${cacheKey}`)
+        .setLabel('Static Lyrics')
+        .setStyle(discord_js_1.ButtonStyle.Secondary));
+    c.addActionRowComponents(new discord_js_1.ActionRowBuilder().addComponents(...buttons));
+    return c;
+}
+
 function renderView(cacheKey, data, client, guildId) {
-    return data.mode === 'sync'
-        ? renderSynced(cacheKey, data, client, guildId)
-        : renderFullText(cacheKey, data, client, guildId);
+    if (data.mode === 'sync') return renderSynced(cacheKey, data, client, guildId);
+    if (data.mode === 'full') return renderFullText(cacheKey, data, client, guildId);
+    return renderChoice(cacheKey, data, client, guildId);
 }
 
 /** Persists the requested mode (falling back to Full Text if Sync isn't currently eligible) and renders it. */
@@ -288,7 +317,7 @@ exports.default = {
         const guildId = context.guildId;
         const player = client.music?.players?.get(guildId);
 
-        let title, artist, durationMs, uri;
+        let title, artist, durationMs, uri, source;
         if (songQuery) {
             title = songQuery;
             artist = '';
@@ -298,6 +327,8 @@ exports.default = {
             artist = player.queue.current.author || '';
             durationMs = player.queue.current.length;
             uri = player.queue.current.uri;
+            const rawSource = player.queue.current.sourceName?.toLowerCase();
+            source = rawSource ? (SOURCE_LABELS[rawSource] || player.queue.current.sourceName) : undefined;
         }
         else {
             const c = (0, containers_1.container)('Nothing is playing right now. Search for a song to see its lyrics — synced mode will only be available once it\'s actually playing.', { title: 'Lyrics' });
@@ -320,13 +351,12 @@ exports.default = {
             : chunkLines((result.plain || 'No lyrics text available.').split('\n'), FULL_TEXT_CHUNK);
 
         const cacheKey = `lyrics_${guildId || context.channelId}_${Date.now()}`;
-        const liveNow = player?.queue?.current && trackKeyOf(player.queue.current) === trackKey;
         const data = {
-            meta: { title, artist, uri, durationMs, trackKey, guildId },
+            meta: { title, artist, uri, durationMs, trackKey, guildId, source },
             synced: result.synced,
             fullPages,
             fullPage: 0,
-            mode: (result.synced.length > 0 && liveNow) ? 'sync' : 'full',
+            mode: 'choice',
         };
         client.cache.set(cacheKey, data, CACHE_TTL);
 

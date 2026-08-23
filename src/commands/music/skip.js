@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const discord_js_1 = require("discord.js");
 const containers_1 = require("../../ui/containers");
+const lyrics_1 = require("./lyrics");
 exports.default = {
     data: new discord_js_1.SlashCommandBuilder()
         .setName('skip')
@@ -32,6 +33,7 @@ exports.default = {
         }
         try {
             player.skip();
+            await (0, lyrics_1.endLyricsSessions)(client, context.guildId, 'Track skipped — synced lyrics session closed.');
             await reply((0, containers_1.cv2)((0, containers_1.container)('Skipped the current track.', { title: 'Aura Music', color: 'default' })));
         }
         catch (e) {

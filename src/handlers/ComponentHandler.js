@@ -244,6 +244,19 @@ class ComponentHandler {
                 modal.addComponents(new discord_js_1.ActionRowBuilder().addComponents(songInput));
                 return interaction.showModal(modal);
             }
+            if (action === 'lyrics_pick_sync' || action === 'lyrics_pick_full') {
+                const cacheKey = parts[2];
+                const wantMode = action === 'lyrics_pick_sync' ? 'sync' : 'full';
+                const result = (0, lyrics_2.switchMode)(cacheKey, wantMode, this.client, interaction.guildId);
+                if (result.expired) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)(result.container));
+                    return;
+                }
+                await interaction.update((0, containers_1.cv2)(result.container));
+                const sent = await interaction.fetchReply().catch(() => null);
+                (0, lyrics_2.attachLiveMessage)(cacheKey, this.client, sent);
+                return;
+            }
             if (action === 'lyrics_sync') {
                 const cacheKey = parts[2];
                 const result = (0, lyrics_2.switchMode)(cacheKey, 'sync', this.client, interaction.guildId);
@@ -305,6 +318,7 @@ class ComponentHandler {
                     try {
                         if (guildPlayer.player)
                             guildPlayer.player.skip();
+                        await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Track skipped — synced lyrics session closed.');
                     }
                     catch (e) { }
                     break;
@@ -312,6 +326,7 @@ class ComponentHandler {
                     const previous = guildPlayer.player.getPrevious();
                     if (previous) {
                         guildPlayer.player.play(previous);
+                        await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Previous track — synced lyrics session closed.');
                     }
                     else {
                         await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.error)('No previous track found.')));
