@@ -13,6 +13,7 @@ const botInfo_1 = require("../../config/botInfo");
 const WINDOW_SIZE = 5;          // synced-mode: lines shown above/below the active line (>=10 lines total mid-song)
 const FULL_TEXT_CHUNK = 12;     // full-text mode: lines per page
 const MAX_TITLE_LEN = 30;       // shortened track name length
+const LINE_WRAP_LEN = 40;       // wrap any single lyric line beyond this many characters (any language)
 const CACHE_TTL = 1800;         // seconds — refreshed on every interaction/tick while a session is alive
 const SYNC_INTERVAL_MS = 2000;  // how often the live synced view re-checks playback position
 const SYNC_OFFSET_MS = 3000;    // nudges lyric lookup this far ahead of raw playback position to cancel out source delay
@@ -46,6 +47,27 @@ function chunkLines(lines, size) {
         pages.push(lines.slice(i, i + size).join('\n') || '\u200b');
     }
     return pages.length ? pages : ['\u200b'];
+}
+
+/** Greedy word-wrap — breaks text into chunks no longer than maxLen, splitting only on spaces
+ *  (works for any space-delimited script: English, Hindi, Punjabi, etc). */
+function wrapText(text, maxLen) {
+    if (!text || text.length <= maxLen) return [text || '\u200b'];
+    const words = text.split(' ');
+    const chunks = [];
+    let current = '';
+    for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length > maxLen && current) {
+            chunks.push(current);
+            current = word;
+        }
+        else {
+            current = candidate;
+        }
+    }
+    if (current) chunks.push(current);
+    return chunks.length ? chunks : ['\u200b'];
 }
 
 /** True only while the exact track this session was built for is actively playing right now. */
@@ -85,21 +107,31 @@ function progressBar(position, duration, size = 15) {
     return bar;
 }
 
-function renderSynced(cacheKey, data, client, guildId) {
+function renderSynced(cacheKey, data, client, guildId, overridePosition) {
     const player = client.music?.players?.get(guildId);
-    const position = player?.position || 0;
+    const position = overridePosition !== undefined ? overridePosition : (player?.position || 0);
     const duration = player?.queue?.current?.length || data.meta.durationMs || 0;
     const idx = Math.max(0, (0, lyrics_1.getCurrentLineIndex)(data.synced, position + SYNC_OFFSET_MS));
     const start = Math.max(0, idx - WINDOW_SIZE);
     const end = Math.min(data.synced.length, idx + WINDOW_SIZE + 1);
     const rendered = data.synced.slice(start, end).map((line, i) => {
         const realIdx = start + i;
-        return realIdx === idx ? `> **__${line.text}__**` : `> ${line.text}`;
+        // Current line: wrapped chunks, each bold+underlined, no indent.
+        if (realIdx === idx) {
+            return wrapText(line.text, LINE_WRAP_LEN).map(c => `> **__${c}__**`).join('\n');
+        }
+        // Past/upcoming lines: wrapped chunks, each indented 4 spaces. Past lines additionally
+        // render as subtext (-#) so they read as visually "done" against the current line.
+        const indentedChunks = wrapText(line.text, LINE_WRAP_LEN).map(c => `    ${c}`);
+        return realIdx < idx
+            ? indentedChunks.map(c => `> -# ${c}`).join('\n')
+            : indentedChunks.map(c => `> ${c}`).join('\n');
     }).join('\n');
 
     const lines = [`## ${titleLine(data, false)}`];
     if (duration) {
-        lines.push(`${formatTime(position)} \`${progressBar(position, duration)}\` ${formatTime(duration)}`);
+        const barLine = `${formatTime(position)} \`${progressBar(position, duration)}\` ${formatTime(duration)}`;
+        lines.push(player?.paused ? `${barLine}  •  Song Is Paused` : barLine);
     }
     lines.push('', rendered, '', FOOTER);
 
@@ -263,11 +295,26 @@ async function tick(client, guildId, messageId) {
         guildMap.delete(messageId);
         return;
     }
+    // Interpolate: Lavalink's own position reports land every few seconds, so between
+    // reports we estimate forward using real elapsed wall-clock time. Without this the
+    // displayed position (and the line/progress-bar it drives) only visibly changes
+    // when a fresh Lavalink report arrives, even though we edit every SYNC_INTERVAL_MS.
+    // While paused, Lavalink keeps re-sending the same frozen position, so the change-check
+    // below never re-anchors — extrapolating against wall-clock time in that state would
+    // make the position (and the lyric line) keep climbing even though nothing is playing.
+    const rawPosition = player.position;
+    if (rawPosition !== session.lastRawPosition) {
+        session.lastRawPosition = rawPosition;
+        session.positionCapturedAt = Date.now();
+    }
+    const estimatedPosition = player.paused
+        ? session.lastRawPosition
+        : session.lastRawPosition + (Date.now() - session.positionCapturedAt);
     // Always edit on every tick (not only when the active line changes) — otherwise the progress bar
     // and timestamp go stale between line changes, and edits end up landing on whatever irregular
     // gap separates two lyric lines instead of a steady 2s cadence.
     client.cache.set(session.cacheKey, data, CACHE_TTL);
-    await session.message.edit((0, containers_1.cv2)(renderSynced(session.cacheKey, data, client, guildId))).catch(() => {
+    await session.message.edit((0, containers_1.cv2)(renderSynced(session.cacheKey, data, client, guildId, estimatedPosition))).catch(() => {
         clearInterval(session.intervalId);
         guildMap.delete(messageId);
     });
@@ -290,6 +337,11 @@ function attachLiveMessage(cacheKey, client, message) {
         cacheKey,
         trackKey: data.meta.trackKey,
         message,
+        // Lavalink only reports a fresh position every few seconds (its own internal
+        // update interval) — we interpolate between those reports using real elapsed
+        // time so the display advances every tick instead of jumping in ~5s steps.
+        lastRawPosition: client.music?.players?.get(guildId)?.position || 0,
+        positionCapturedAt: Date.now(),
     };
     session.intervalId = setInterval(() => tick(client, guildId, message.id), SYNC_INTERVAL_MS);
     guildMap.set(message.id, session);
@@ -346,9 +398,11 @@ exports.default = {
         }
 
         const trackKey = `${title}::${artist}`;
-        const fullPages = result.synced.length > 0
-            ? chunkLines(result.synced.map(l => l.text), FULL_TEXT_CHUNK)
-            : chunkLines((result.plain || 'No lyrics text available.').split('\n'), FULL_TEXT_CHUNK);
+        const rawFullLines = result.synced.length > 0
+            ? result.synced.map(l => l.text)
+            : (result.plain || 'No lyrics text available.').split('\n');
+        const wrappedFullLines = rawFullLines.flatMap(line => wrapText(line, LINE_WRAP_LEN));
+        const fullPages = chunkLines(wrappedFullLines, FULL_TEXT_CHUNK);
 
         const cacheKey = `lyrics_${guildId || context.channelId}_${Date.now()}`;
         const data = {
