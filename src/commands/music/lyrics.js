@@ -57,11 +57,12 @@ function isLiveEligible(data, client, guildId) {
     return trackKeyOf(current) === data.meta.trackKey;
 }
 
-/** Track title as a clickable link (falls back to plain text when there's no URI). */
-function titleLine(data) {
+/** Track title as a clickable link (falls back to plain text when there's no URI). Artist is opt-in — the
+ *  synced view intentionally omits it, matching how it's shown there. */
+function titleLine(data, includeArtist = true) {
     const label = shortenTitle(data.meta.title);
     const linked = data.meta.uri ? `[${label}](${data.meta.uri})` : label;
-    return data.meta.artist ? `${linked} — ${data.meta.artist}` : linked;
+    return (includeArtist && data.meta.artist) ? `${linked} — ${data.meta.artist}` : linked;
 }
 
 function formatTime(ms) {
@@ -96,7 +97,7 @@ function renderSynced(cacheKey, data, client, guildId) {
         return realIdx === idx ? `> **__${line.text}__**` : `> ${line.text}`;
     }).join('\n');
 
-    const lines = [`## ${titleLine(data)}`];
+    const lines = [`## ${titleLine(data, false)}`];
     if (duration) {
         lines.push(`${formatTime(position)} \`${progressBar(position, duration)}\` ${formatTime(duration)}`);
     }
@@ -262,9 +263,9 @@ async function tick(client, guildId, messageId) {
         guildMap.delete(messageId);
         return;
     }
-    const idx = (0, lyrics_1.getCurrentLineIndex)(data.synced, player.position + SYNC_OFFSET_MS);
-    if (idx === session.lastIndex) return;
-    session.lastIndex = idx;
+    // Always edit on every tick (not only when the active line changes) — otherwise the progress bar
+    // and timestamp go stale between line changes, and edits end up landing on whatever irregular
+    // gap separates two lyric lines instead of a steady 2s cadence.
     client.cache.set(session.cacheKey, data, CACHE_TTL);
     await session.message.edit((0, containers_1.cv2)(renderSynced(session.cacheKey, data, client, guildId))).catch(() => {
         clearInterval(session.intervalId);
@@ -289,7 +290,6 @@ function attachLiveMessage(cacheKey, client, message) {
         cacheKey,
         trackKey: data.meta.trackKey,
         message,
-        lastIndex: (0, lyrics_1.getCurrentLineIndex)(data.synced, (client.music?.players?.get(guildId)?.position || 0) + SYNC_OFFSET_MS),
     };
     session.intervalId = setInterval(() => tick(client, guildId, message.id), SYNC_INTERVAL_MS);
     guildMap.set(message.id, session);

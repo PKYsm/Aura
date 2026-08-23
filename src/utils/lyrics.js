@@ -48,6 +48,28 @@ function getCurrentLineIndex(lines, positionMs) {
     return idx;
 }
 
+/** Rough native-script ratio (Devanagari + Gurmukhi) vs total lettering — used to prefer native-script
+ *  lyrics over romanized/Latin transliterations when a search returns multiple candidates. */
+function nativeScriptRatio(text) {
+    if (!text) return 0;
+    const letters = text.match(/[a-zA-Z\u0900-\u097F\u0A00-\u0A7F]/g) || [];
+    if (!letters.length) return 0;
+    const native = letters.filter(ch => /[\u0900-\u097F\u0A00-\u0A7F]/.test(ch)).length;
+    return native / letters.length;
+}
+
+/** LRCLIB's /search endpoint has no popularity/view/like metric to rank by — it only returns raw
+ *  submissions. This scores candidates on what IS available: synced-lyrics presence (more complete
+ *  submissions tend to have them) and native-script ratio (prefers Devanagari/Gurmukhi text over a
+ *  romanized transliteration of the same song). */
+function scoreLrclibCandidate(entry) {
+    const text = entry.syncedLyrics || entry.plainLyrics || '';
+    let score = 0;
+    if (entry.syncedLyrics) score += 2;
+    score += nativeScriptRatio(text) * 3;
+    return score;
+}
+
 /** Source 1: LRCLIB (lrclib.net) — free, no API key, provides both synced (.lrc) and plain lyrics. */
 async function fetchFromLrclib(title, artist, durationSec) {
     try {
@@ -72,15 +94,14 @@ async function fetchFromLrclib(title, artist, durationSec) {
         });
         if (searchRes.ok) {
             const results = await searchRes.json();
-            if (Array.isArray(results) && results.length > 0) {
-                const best = results[0];
-                if (best.syncedLyrics || best.plainLyrics) {
-                    return {
-                        source: 'LRCLIB',
-                        synced: best.syncedLyrics ? parseSyncedLyrics(best.syncedLyrics) : [],
-                        plain: best.plainLyrics || null,
-                    };
-                }
+            const usable = Array.isArray(results) ? results.filter(r => r.syncedLyrics || r.plainLyrics) : [];
+            if (usable.length > 0) {
+                const best = usable.slice().sort((a, b) => scoreLrclibCandidate(b) - scoreLrclibCandidate(a))[0];
+                return {
+                    source: 'LRCLIB',
+                    synced: best.syncedLyrics ? parseSyncedLyrics(best.syncedLyrics) : [],
+                    plain: best.plainLyrics || null,
+                };
             }
         }
     } catch (err) {
