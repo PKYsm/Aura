@@ -65,9 +65,10 @@ function isLiveEligible(data, client, guildId) {
 }
 
 /** Track title as a clickable link (falls back to plain text when there's no URI). Artist is opt-in — the
- *  synced view intentionally omits it, matching how it's shown there. */
+ *  synced view intentionally omits it, matching how it's shown there.
+ *  Always uses Infinity so the full cleaned title is shown (no truncation, no hashtags/mentions). */
 function titleLine(data, includeArtist = true) {
-    const linked = (0, trackTitle_1.clickableTitle)(data.meta.title, data.meta.uri);
+    const linked = (0, trackTitle_1.clickableTitle)(data.meta.title, data.meta.uri, Infinity);
     return (includeArtist && data.meta.artist) ? `${linked} — ${data.meta.artist}` : linked;
 }
 
@@ -92,20 +93,26 @@ function renderSynced(cacheKey, data, client, guildId, overridePosition) {
             : indentedChunks.map(c => `> ${c}`).join('\n');
     }).join('\n');
 
-    const lines = [`### ${titleLine(data, false)}`];
+    // Build the container manually so we can insert a native Separator (no blank-line gap)
+    // between the progress bar and the lyric window.
+    const c = new discord_js_1.ContainerBuilder();
+    c.setAccentColor(containers_1.THEME_COLOR);
+    c.addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent(`### ${titleLine(data, false)}`));
     if (duration) {
         const barLine = `> ${format_1.formatTime(position)} \`${format_1.progressBar(position, duration)}\` ${format_1.formatTime(duration)}`;
-        lines.push(player?.paused ? `${barLine} \` Song Is Paused\`` : barLine);
+        c.addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent(
+            player?.paused ? `${barLine} \` Song Is Paused\`` : barLine
+        ));
     }
-    lines.push('', rendered);
-
-    return (0, containers_1.container)(lines.join('\n'));
+    c.addSeparatorComponents(new discord_js_1.SeparatorBuilder());
+    c.addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent(rendered));
+    return c;
 }
 
 function renderFullText(cacheKey, data, client, guildId) {
     const total = data.fullPages.length;
     const page = data.fullPages[data.fullPage];
-    const headerBits = [`__${titleLine(data)}__`];
+    const headerBits = [`__${titleLine(data, false)}__`];
     if (total > 1) headerBits.push(`Page ${data.fullPage + 1}/${total}`);
     const content = `${headerBits.join('  •  ')}\n\n${page}\n\n${FOOTER}`;
     const c = (0, containers_1.container)(content);

@@ -171,7 +171,14 @@ exports.default = {
             }
             catch (e) {
                 console.error(`Error executing hybrid command ${commandName}:`, e);
-                await message.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('An error occurred while executing this command.'))).catch(() => { });
+                const errPayload = (0, containers_1.cv2)((0, containers_1.error)('An error occurred while executing this command.'));
+                if (sentMessage) {
+                    // A "Searching…" (or similar) message was already sent — edit it in-place
+                    // so the user doesn't see a stale searching message AND a separate error.
+                    await sentMessage.edit(errPayload).catch(() => { });
+                } else {
+                    await message.reply(errPayload).catch(() => { });
+                }
             }
         }
         else {

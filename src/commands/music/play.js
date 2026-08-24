@@ -92,16 +92,23 @@ exports.default = {
         if (!kazaTracks.length) {
             return interaction.editReply((0, containers_1.cv2)((0, containers_1.error)('No results found.')));
         }
+        const prefix = await (0, resolvePrefix_1.resolvePrefix)(client, interaction.guildId, interaction.user.id);
         if (resData.loadType === 'playlist') {
             for (const track of kazaTracks)
                 player.queue.add(track);
-            await interaction.editReply((0, containers_1.cv2)((0, containers_1.success)(`Added ${kazaTracks.length} tracks from playlist **${resData.data?.info?.name || 'Unknown'}** to the queue.`)));
+            const playlistName = resData.data?.info?.name || 'Unknown';
+            const endPosition = player.queue.length;
+            const startPosition = endPosition - kazaTracks.length + 1;
+            const c = (0, containers_1.containerWithDivider)([
+                `**Added to queue** \`#${startPosition}-#${endPosition}\`\n${(0, trackTitle_1.clickableTitle)(playlistName, isUrl ? query : undefined, Infinity)} • ${kazaTracks.length} tracks`,
+                `-# Not the right tracks? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``
+            ]);
+            await interaction.editReply((0, containers_1.cv2)(c));
         }
         else {
             player.queue.add(kazaTracks[0]);
             const track = kazaTracks[0];
             const position = player.queue.length;
-            const prefix = await (0, resolvePrefix_1.resolvePrefix)(client, interaction.guildId, interaction.user.id);
             const c = (0, containers_1.containerWithDivider)([
                 `**Added to queue** \`#${position}\`\n${(0, trackTitle_1.clickableTitle)(track.title, track.uri, Infinity)}`,
                 `-# Not the right track? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``
@@ -109,10 +116,14 @@ exports.default = {
             await interaction.editReply((0, containers_1.cv2)(c));
         }
         if (!player.playing && !player.paused) {
+            // Nothing was playing — start playback. This triggers Kazagumo's `playerStart` event,
+            // which is what sends/refreshes the persistent Now Playing panel (see trackStart.js).
             player.play();
         }
-        else {
-            await guildPlayer.resendPanel(client);
-        }
+        // NOTE: if something is already playing, do nothing else here. The "Added to queue"
+        // message above is the only thing that should be sent. The persistent Now Playing panel
+        // must NOT be deleted/resent for a plain queue add — only on a real playback-state change
+        // (new track starting, bot leaving/disconnecting, queue ending, etc. — see
+        // GuildPlayer#resendPanel in PlayerManager.js and its callers).
     }
 };
