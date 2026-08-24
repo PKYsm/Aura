@@ -8,6 +8,7 @@ const discord_js_1 = require("discord.js");
 const kazagumo_1 = require("kazagumo");
 const shoukaku_1 = require("shoukaku");
 const jsondb_1 = require("./utils/jsondb");
+const redisCache_1 = require("./utils/redisCache");
 const node_cache_1 = __importDefault(require("node-cache"));
 const chalk_1 = __importDefault(require("chalk"));
 const gradient_string_1 = __importDefault(require("gradient-string"));
@@ -113,6 +114,15 @@ class AuraClient extends discord_js_1.Client {
         await animate('Initializing Database...', async () => {
             await this.db.$connect();
             return 'Local JSON Database Ready';
+        });
+        await animate('Connecting Redis Cache...', async () => {
+            const redis = (0, redisCache_1.getRedis)();
+            if (!redis) return 'Redis skipped (env vars not set)';
+            // Dedicated RAM cache for DB hot-path models (separate from client.cache which
+            // is used for lyrics sessions).  5-minute TTL, checked every 60 seconds.
+            const dbRamCache = new node_cache_1.default({ stdTTL: 300, checkperiod: 60 });
+            this.db.useRedis(redis, dbRamCache);
+            return 'Redis L2 Cache Active (RAM → Redis → DB)';
         });
         await animate('Indexing Commands...', async () => {
             const res = await this.commandHandler.load();

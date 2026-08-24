@@ -241,5 +241,60 @@ class JsonDatabase {
     async $disconnect() {
         return Promise.resolve();
     }
+    /**
+     * Wraps the 6 hottest models with L1 (RAM) + L2 (Redis) caching.
+     * Every caller of client.db.guildConfig / premiumUser / etc. automatically
+     * gets 3-tier caching with zero code changes anywhere else.
+     *
+     * Called once during bot startup, after Redis is confirmed reachable.
+     * If redis is null (env vars missing), this is a safe no-op.
+     *
+     * Cache TTLs (Redis / RAM):
+     *   guildConfig   : 1 h  / 5 min  — prefix + nameplate per guild
+     *   premiumUser   : 12 h / 5 min  — premium status per user
+     *   userConfig    : 6 h  / 5 min  — search engine per user
+     *   blacklist     : 24 h / 5 min  — blacklist per user
+     *   noPrefixUser  : 1 h  / 5 min  — no-prefix access per user
+     *   adminUser     : 24 h / 5 min  — bot admin status per user
+     *
+     * @param {object} redis    - Upstash Redis client from getRedis()
+     * @param {object} ramCache - Dedicated NodeCache instance (separate from client.cache)
+     */
+    useRedis(redis, ramCache) {
+        if (!redis) return; // not configured — stay on pure JSON DB
+        const { makeCachedModel } = require('./redisCache');
+        // guildId-keyed
+        this.guildConfig = makeCachedModel(
+            this.guildConfig, redis, ramCache,
+            (w) => w?.guildId ? `aura:gc:${w.guildId}` : null,
+            3600
+        );
+        // userId-keyed
+        this.premiumUser = makeCachedModel(
+            this.premiumUser, redis, ramCache,
+            (w) => w?.userId ? `aura:pu:${w.userId}` : null,
+            43200
+        );
+        this.userConfig = makeCachedModel(
+            this.userConfig, redis, ramCache,
+            (w) => w?.userId ? `aura:uc:${w.userId}` : null,
+            21600
+        );
+        this.blacklist = makeCachedModel(
+            this.blacklist, redis, ramCache,
+            (w) => w?.userId ? `aura:bl:${w.userId}` : null,
+            86400
+        );
+        this.noPrefixUser = makeCachedModel(
+            this.noPrefixUser, redis, ramCache,
+            (w) => w?.userId ? `aura:np:${w.userId}` : null,
+            3600
+        );
+        this.adminUser = makeCachedModel(
+            this.adminUser, redis, ramCache,
+            (w) => w?.userId ? `aura:au:${w.userId}` : null,
+            86400
+        );
+    }
 }
 exports.JsonDatabase = JsonDatabase;
