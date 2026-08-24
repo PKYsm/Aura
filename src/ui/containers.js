@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.THEME_COLOR = void 0;
 exports.container = container;
+exports.containerWithDivider = containerWithDivider;
 exports.success = success;
 exports.error = error;
 exports.premiumOnly = premiumOnly;
@@ -71,6 +72,20 @@ function container(content, options) {
             c.addTextDisplayComponents(...texts);
         }
     }
+    return c;
+}
+/** Like container(), but takes multiple text blocks and puts a native divider line
+ *  between each consecutive pair — for when you need an actual separator, not just
+ *  a blank line, between two pieces of content. */
+function containerWithDivider(blocks, options) {
+    const c = new discord_js_1.ContainerBuilder();
+    c.setAccentColor(ACCENT_COLORS[options?.color || 'default']);
+    blocks.forEach((block, i) => {
+        if (i > 0) {
+            c.addSeparatorComponents(new discord_js_1.SeparatorBuilder());
+        }
+        c.addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent(block));
+    });
     return c;
 }
 function success(text) {

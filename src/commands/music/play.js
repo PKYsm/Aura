@@ -102,10 +102,11 @@ exports.default = {
             const track = kazaTracks[0];
             const position = player.queue.length;
             const prefix = await (0, resolvePrefix_1.resolvePrefix)(client, interaction.guildId, interaction.user.id);
-            const content = `**Added to queue** \`#${position}\`\n` +
-                `${(0, trackTitle_1.clickableTitle)(track.title, track.uri, Infinity)}\n\n` +
-                `-# Not the right track? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``;
-            await interaction.editReply((0, containers_1.cv2)((0, containers_1.container)(content)));
+            const c = (0, containers_1.containerWithDivider)([
+                `**Added to queue** \`#${position}\`\n${(0, trackTitle_1.clickableTitle)(track.title, track.uri, Infinity)}`,
+                `-# Not the right track? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``
+            ]);
+            await interaction.editReply((0, containers_1.cv2)(c));
         }
         if (!player.playing && !player.paused) {
             player.play();
