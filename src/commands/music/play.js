@@ -4,6 +4,9 @@ const discord_js_1 = require("discord.js");
 const containers_1 = require("../../ui/containers");
 const PlayerManager_1 = require("../../managers/PlayerManager");
 const kazagumo_1 = require("kazagumo");
+const trackTitle_1 = require("../../utils/trackTitle");
+const resolvePrefix_1 = require("../../utils/resolvePrefix");
+const emojis_1 = require("../../utils/emojis");
 exports.default = {
     data: new discord_js_1.SlashCommandBuilder()
         .setName('play')
@@ -21,6 +24,8 @@ exports.default = {
         if (!voiceChannel) {
             return interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('You need to be in a voice channel to play music!')));
         }
+        // Acknowledge immediately — everything below edits this same message into the final result.
+        await interaction.reply((0, containers_1.cv2)((0, containers_1.container)(`${emojis_1.default.general.loading} **Searching**: \`${query}\``)));
         let player = client.music.players.get(interaction.guildId);
         if (!player) {
             player = await client.music.createPlayer({
@@ -52,7 +57,7 @@ exports.default = {
         // --- SHOUKAKU DIRECT FETCH LOGIC (BYPASS KAZAGUMO WRAPPER) ---
         const node = client.music.shoukaku.getIdealNode();
         if (!node) {
-            return interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('Music servers are currently unavailable.')));
+            return interaction.editReply((0, containers_1.cv2)((0, containers_1.error)('Music servers are currently unavailable.')));
         }
         let resData = null;
         let kazaTracks = [];
@@ -85,16 +90,22 @@ exports.default = {
                 break;
         }
         if (!kazaTracks.length) {
-            return interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('No results found.')));
+            return interaction.editReply((0, containers_1.cv2)((0, containers_1.error)('No results found.')));
         }
         if (resData.loadType === 'playlist') {
             for (const track of kazaTracks)
                 player.queue.add(track);
-            await interaction.reply((0, containers_1.cv2)((0, containers_1.success)(`Added ${kazaTracks.length} tracks from playlist **${resData.data?.info?.name || 'Unknown'}** to the queue.`)));
+            await interaction.editReply((0, containers_1.cv2)((0, containers_1.success)(`Added ${kazaTracks.length} tracks from playlist **${resData.data?.info?.name || 'Unknown'}** to the queue.`)));
         }
         else {
             player.queue.add(kazaTracks[0]);
-            await interaction.reply((0, containers_1.cv2)((0, containers_1.success)(`Added **${kazaTracks[0].title}** to the queue.`)));
+            const track = kazaTracks[0];
+            const position = player.queue.length;
+            const prefix = await (0, resolvePrefix_1.resolvePrefix)(client, interaction.guildId, interaction.user.id);
+            const content = `**Added to queue** \`#${position}\`\n` +
+                `${(0, trackTitle_1.clickableTitle)(track.title, track.uri, Infinity)}\n\n` +
+                `-# Not the right track? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``;
+            await interaction.editReply((0, containers_1.cv2)((0, containers_1.container)(content)));
         }
         if (!player.playing && !player.paused) {
             player.play();

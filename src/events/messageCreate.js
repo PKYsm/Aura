@@ -124,6 +124,7 @@ exports.default = {
             }
         }
         else if (command.execute) {
+            let sentMessage = null;
             const fakeInteraction = {
                 user: message.author,
                 member: message.member,
@@ -131,8 +132,16 @@ exports.default = {
                 channelId: message.channelId,
                 guild: message.guild,
                 channel: message.channel,
-                reply: async (options) => message.reply(options),
-                editReply: async (options) => message.reply(options),
+                reply: async (options) => {
+                    sentMessage = await message.reply(options);
+                    return sentMessage;
+                },
+                editReply: async (options) => {
+                    if (sentMessage)
+                        return sentMessage.edit(options);
+                    sentMessage = await message.reply(options);
+                    return sentMessage;
+                },
                 followUp: async (options) => message.reply(options),
                 deferReply: async () => { },
                 options: {

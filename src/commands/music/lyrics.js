@@ -10,10 +10,10 @@ const containers_1 = require("../../ui/containers");
 const lyrics_1 = require("../../utils/lyrics");
 const botInfo_1 = require("../../config/botInfo");
 const format_1 = require("../../utils/format");
+const trackTitle_1 = require("../../utils/trackTitle");
 
 const WINDOW_SIZE = 5;          // synced-mode: lines shown above/below the active line (>=10 lines total mid-song)
 const FULL_TEXT_CHUNK = 12;     // full-text mode: lines per page
-const MAX_TITLE_LEN = 30;       // shortened track name length
 const LINE_WRAP_LEN = 40;       // wrap any single lyric line beyond this many characters (any language)
 const CACHE_TTL = 1800;         // seconds — refreshed on every interaction/tick while a session is alive
 const SYNC_INTERVAL_MS = 2000;  // how often the live synced view re-checks playback position
@@ -21,22 +21,6 @@ const SYNC_OFFSET_MS = 3000;    // nudges lyric lookup this far ahead of raw pla
 
 const FOOTER = `-# ${botInfo_1.botName} • by ${botInfo_1.developer.name}`;
 const SOURCE_LABELS = { youtube: 'YouTube', spotify: 'Spotify', soundcloud: 'SoundCloud', jiosaavn: 'JioSaavn', deezer: 'Deezer' };
-
-/** Strips hashtags and @mentions out of a track title before it's ever shown. */
-function cleanDisplayTitle(title) {
-    if (!title) return '';
-    return title
-        .replace(/<@!?\d+>/g, '')
-        .replace(/#\S+/g, '')
-        .replace(/@\S+/g, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim();
-}
-
-function shortenTitle(title) {
-    const clean = cleanDisplayTitle(title) || 'Unknown Track';
-    return clean.length > MAX_TITLE_LEN ? `${clean.slice(0, MAX_TITLE_LEN - 1).trim()}…` : clean;
-}
 
 function trackKeyOf(track) {
     return track ? `${track.title}::${track.author || ''}` : null;
@@ -83,8 +67,7 @@ function isLiveEligible(data, client, guildId) {
 /** Track title as a clickable link (falls back to plain text when there's no URI). Artist is opt-in — the
  *  synced view intentionally omits it, matching how it's shown there. */
 function titleLine(data, includeArtist = true) {
-    const label = shortenTitle(data.meta.title);
-    const linked = data.meta.uri ? `[${label}](${data.meta.uri})` : label;
+    const linked = (0, trackTitle_1.clickableTitle)(data.meta.title, data.meta.uri);
     return (includeArtist && data.meta.artist) ? `${linked} — ${data.meta.artist}` : linked;
 }
 
@@ -167,8 +150,7 @@ function renderEnded(reasonText) {
 
 /** First screen after `/lyrics` runs — title/artist/source plus an explicit Sync-vs-Static choice. */
 function renderChoice(cacheKey, data, client, guildId) {
-    const label = shortenTitle(data.meta.title);
-    const linked = data.meta.uri ? `[${label}](${data.meta.uri})` : label;
+    const linked = (0, trackTitle_1.clickableTitle)(data.meta.title, data.meta.uri);
     const lines = [
         `## ${linked}`,
         `> **Artist:** ${data.meta.artist || 'Unknown'}`,
@@ -375,7 +357,7 @@ exports.default = {
 
         const result = await (0, lyrics_1.fetchLyrics)(title, artist, durationMs);
         if (!result) {
-            return reply((0, containers_1.cv2)((0, containers_1.container)(`No lyrics found for **${shortenTitle(title)}**${artist ? ` by **${artist}**` : ''}.`)));
+            return reply((0, containers_1.cv2)((0, containers_1.container)(`No lyrics found for **${trackTitle_1.shortenTitle(title)}**${artist ? ` by **${artist}**` : ''}.`)));
         }
 
         const trackKey = `${title}::${artist}`;
