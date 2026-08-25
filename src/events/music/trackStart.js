@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const voiceStatus_1 = require("../../utils/voiceStatus");
 const PlayerManager_1 = require("../../managers/PlayerManager");
 const presence_1 = require("../../utils/presence");
+const stats = require("../../utils/stats");
 exports.default = {
     name: 'playerStart',
     emitter: 'music',
@@ -17,6 +18,7 @@ exports.default = {
         }
         guildPlayer.updateActivity();
         (0, presence_1.updateBotPresence)(client);
+        stats.trackSong(); // lifetime songs counter
         await guildPlayer.resendPanel(client);
         if (player.voiceId) {
             const statusText = `<a:Playing:1513451285880246322> Listening to: ${track.title}`;

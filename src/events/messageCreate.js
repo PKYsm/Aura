@@ -7,6 +7,7 @@ const discord_js_1 = require("discord.js");
 const containers_1 = require("../ui/containers");
 const emojis_1 = __importDefault(require("../utils/emojis"));
 const logger_1 = require("../utils/logger");
+const stats = require("../utils/stats");
 exports.default = {
     name: discord_js_1.Events.MessageCreate,
     async execute(message, client) {
@@ -168,6 +169,7 @@ exports.default = {
             try {
                 logger_1.Logger.logCommand(message.author, message.guild, commandName, 'Prefix', message.content);
                 await command.execute(fakeInteraction, client);
+                stats.trackCommand(commandName, message.author.id, message.guildId);
             }
             catch (e) {
                 console.error(`Error executing hybrid command ${commandName}:`, e);

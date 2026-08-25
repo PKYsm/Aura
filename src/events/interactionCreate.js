@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const discord_js_1 = require("discord.js");
 const containers_1 = require("../ui/containers");
 const logger_1 = require("../utils/logger");
+const stats = require("../utils/stats");
 exports.default = {
     name: discord_js_1.Events.InteractionCreate,
     async execute(interaction, client) {
@@ -21,6 +22,7 @@ exports.default = {
                 const rawInput = `/${interaction.commandName}${optsStr ? ' ' + optsStr : ''}`;
                 logger_1.Logger.logCommand(interaction.user, interaction.guild, interaction.commandName, 'Slash', rawInput);
                 await command.execute(interaction, client);
+                stats.trackCommand(interaction.commandName, interaction.user.id, interaction.guildId);
             }
             catch (err) {
                 console.error(err);

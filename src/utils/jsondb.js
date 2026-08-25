@@ -56,10 +56,13 @@ function matchWhere(record, where) {
             const isOperatorObj = Object.keys(val).some((k) => OPERATOR_KEYS.includes(k));
             if (isOperatorObj) {
                 const fieldVal = record[key];
-                if ('lt'  in val && !(new Date(fieldVal) <  new Date(val.lt)))  return false;
-                if ('lte' in val && !(new Date(fieldVal) <= new Date(val.lte))) return false;
-                if ('gt'  in val && !(new Date(fieldVal) >  new Date(val.gt)))  return false;
-                if ('gte' in val && !(new Date(fieldVal) >= new Date(val.gte))) return false;
+                // null means "no expiry / lifetime" — never matches any date comparison.
+                // Without this guard, new Date(null) = Jan 1 1970, which is always
+                // less-than "now", so every lifetime record would wrongly appear expired.
+                if ('lt'  in val) { if (fieldVal === null || fieldVal === undefined) return false; if (!(new Date(fieldVal) <  new Date(val.lt)))  return false; }
+                if ('lte' in val) { if (fieldVal === null || fieldVal === undefined) return false; if (!(new Date(fieldVal) <= new Date(val.lte))) return false; }
+                if ('gt'  in val) { if (fieldVal === null || fieldVal === undefined) return false; if (!(new Date(fieldVal) >  new Date(val.gt)))  return false; }
+                if ('gte' in val) { if (fieldVal === null || fieldVal === undefined) return false; if (!(new Date(fieldVal) >= new Date(val.gte))) return false; }
                 if ('in'  in val && !val.in.includes(fieldVal))                 return false;
                 if ('not' in val && fieldVal === val.not)                        return false;
             } else {
