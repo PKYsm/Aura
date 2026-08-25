@@ -792,6 +792,42 @@ class ComponentHandler {
                         `${dot} **Node State:** \`${state}\`\n` +
                         `${dot} **Active Players:** \`${players}\``;
                 }
+                else if (choice === 'lifetime') {
+                    // Redis call is async — deferUpdate first to avoid timeout
+                    await interaction.deferUpdate();
+                    const { getAll } = require('../utils/stats');
+                    const s = await getAll();
+                    const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+                    const topCmds = s.topCommands.slice(0, 5);
+                    const topStr = topCmds.length
+                        ? topCmds.map((cmd, i) => `\`${i + 1}.\` \`/${cmd.name}\` — **${fmt(cmd.count)}**`).join('\n')
+                        : 'No data yet — run some commands first!';
+                    const lifetimeTitle = `${emojis_1.default.general.stats_icon} Lifetime Statistics`;
+                    const lifetimeContent =
+                        `${dot} **Commands Run:** \`${fmt(s.commands)}\`\n` +
+                        `${dot} **Songs Played:** \`${fmt(s.songs)}\`\n` +
+                        `${dot} **Unique Users:** \`${fmt(s.users)}\`\n` +
+                        `${dot} **Unique Guilds:** \`${fmt(s.guilds)}\`\n\n` +
+                        `**Top Commands:**\n${topStr}`;
+                    const botName2 = this.client.user?.username || 'Bot';
+                    const lifetimeUI = new discord_js_1.ContainerBuilder()
+                        .addTextDisplayComponents(new discord_js_1.TextDisplayBuilder()
+                            .setContent(`# ${lifetimeTitle}\n\n${lifetimeContent}\n\n-# ${botName2} • Stats tracked from Redis`));
+                    const lifetimeSelect = new discord_js_1.StringSelectMenuBuilder()
+                        .setCustomId(`${customPrefix}:stats_select:${callerId}`)
+                        .setPlaceholder('Select statistic category...')
+                        .addOptions([
+                            { label: "General Stats",  description: "Servers, Users, Shards",           emoji: emojis_1.default.general.stats,      value: "general"  },
+                            { label: "Lifetime Stats", description: "Commands, Songs & Users all-time",  emoji: emojis_1.default.general.stats_icon, value: "lifetime" },
+                            { label: "Team Info",      description: "Owner and Developer info",           emoji: emojis_1.default.general.team,       value: "team"     },
+                            { label: "System Info",    description: "DB, RAM, CPU",                      emoji: emojis_1.default.general.system,     value: "system"   },
+                            { label: "Ping",           description: "Database & Websocket Latency",      emoji: emojis_1.default.general.ping,       value: "ping"     },
+                            { label: "Music Node",     description: "Lavalink Node status",              emoji: emojis_1.default.general.music,      value: "music"    }
+                        ]);
+                    lifetimeUI.addActionRowComponents(new discord_js_1.ActionRowBuilder().addComponents(lifetimeSelect));
+                    await interaction.editReply((0, containers_1.cv2)(lifetimeUI));
+                    return;
+                }
                 const botName = this.client.user?.username || 'Bot';
                 const statsUI = new discord_js_1.ContainerBuilder()
                     .addTextDisplayComponents(new discord_js_1.TextDisplayBuilder().setContent(`# ${title}\n\n${content}\n\n-# ${botName} • Made By Aura Devs`));
@@ -799,11 +835,12 @@ class ComponentHandler {
                     .setCustomId(`${customPrefix}:stats_select:${callerId}`)
                     .setPlaceholder('Select statistic category...')
                     .addOptions([
-                    { label: "General Stats", description: "Servers, Users, Shards", emoji: emojis_1.default.general.stats, value: "general" },
-                    { label: "Team Info", description: "Owner and Developer info", emoji: emojis_1.default.general.team, value: "team" },
-                    { label: "System Info", description: "DB, RAM, CPU", emoji: emojis_1.default.general.system, value: "system" },
-                    { label: "Ping", description: "Database & Websocket Latency", emoji: emojis_1.default.general.ping, value: "ping" },
-                    { label: "Music Node", description: "Lavalink Node status", emoji: emojis_1.default.general.music, value: "music" }
+                    { label: "General Stats",  description: "Servers, Users, Shards",           emoji: emojis_1.default.general.stats,      value: "general"  },
+                    { label: "Lifetime Stats", description: "Commands, Songs & Users all-time",  emoji: emojis_1.default.general.stats_icon, value: "lifetime" },
+                    { label: "Team Info",      description: "Owner and Developer info",           emoji: emojis_1.default.general.team,       value: "team"     },
+                    { label: "System Info",    description: "DB, RAM, CPU",                      emoji: emojis_1.default.general.system,     value: "system"   },
+                    { label: "Ping",           description: "Database & Websocket Latency",      emoji: emojis_1.default.general.ping,       value: "ping"     },
+                    { label: "Music Node",     description: "Lavalink Node status",              emoji: emojis_1.default.general.music,      value: "music"    }
                 ]);
                 statsUI.addActionRowComponents(new discord_js_1.ActionRowBuilder().addComponents(select));
                 await interaction.update((0, containers_1.cv2)(statsUI));
