@@ -48,5 +48,21 @@ exports.default = {
                 await channel.send((0, containers_1.cv2)(c)).catch(() => { });
             }
         }
+        // ── Bug 3 fix: leave VC after queue ends unless 24/7 mode is active ──
+        // Checked AFTER sending the "queue ended" message so the user sees it first.
+        try {
+            const vc247 = await client.db.vc247.findUnique({ where: { guildId: player.guildId } });
+            if (!vc247) {
+                // Not in 24/7 mode — destroy the player so the bot leaves the VC.
+                // Small delay so the queue-ended message lands before the disconnect.
+                setTimeout(() => {
+                    const p = client.music?.players?.get(player.guildId);
+                    if (p && !p.playing && !p.paused) {
+                        p.destroy();
+                    }
+                }, 3000);
+            }
+            // If vc247 IS active, bot stays in the VC silently (waiting for next play command).
+        } catch { /* non-fatal — worst case bot stays in VC */ }
     }
 };

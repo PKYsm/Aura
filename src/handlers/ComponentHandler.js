@@ -307,39 +307,54 @@ class ComponentHandler {
                 await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('No music is currently playing in this server.')));
                 return;
             }
-            await interaction.deferUpdate().catch(() => { });
+            // ── Check BEFORE deferring so we can still reply() with an ephemeral error ──
+            // Silently returning after deferUpdate() leaves the interaction in a broken
+            // "thinking" state and gives the user zero feedback.
             if (guildPlayer && !guildPlayer.player.queue.current) {
-                if (['pause', 'skip', 'prev', 'rewind', 'forward', 'stop', 'loop', 'shuffle', 'autoplay', 'heart'].includes(action)) {
+                if (musicActions.includes(action)) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('No track is currently playing.')));
                     return;
                 }
             }
+            await interaction.deferUpdate().catch(() => { });
+            // Toast message shown to the button-presser only (ephemeral followUp)
+            let toastText = null;
             switch (action) {
                 case 'pause':
                     guildPlayer.player.pause(!guildPlayer.player.paused);
+                    toastText = guildPlayer.player.paused
+                        ? `${emojis_1.default.music.pause} **Paused** by ${interaction.user}`
+                        : `${emojis_1.default.music.play} **Resumed** by ${interaction.user}`;
                     break;
                 case 'skip':
                     try {
                         if (guildPlayer.player)
                             guildPlayer.player.skip();
                         await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Track skipped — synced lyrics session closed.');
+                        toastText = `${emojis_1.default.music.next} **Skipped** by ${interaction.user}`;
                     }
                     catch (e) { }
                     break;
-                case 'prev':
+                case 'prev': {
                     const previous = guildPlayer.player.getPrevious();
                     if (previous) {
                         guildPlayer.player.play(previous);
                         await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Previous track — synced lyrics session closed.');
+                        toastText = `${emojis_1.default.music.prev} **Previous track** by ${interaction.user}`;
                     }
                     else {
                         await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.error)('No previous track found.')));
+                        return;
                     }
                     break;
+                }
                 case 'rewind':
                     guildPlayer.player.seek(Math.max(0, guildPlayer.player.position - 10000));
+                    toastText = `${emojis_1.default.music.back} **Rewound 10s** by ${interaction.user}`;
                     break;
                 case 'forward':
                     guildPlayer.player.seek(guildPlayer.player.position + 10000);
+                    toastText = `${emojis_1.default.music.forward} **Fast-forwarded 10s** by ${interaction.user}`;
                     break;
                 case 'stop': {
                     guildPlayer.isStopped = true;
@@ -348,13 +363,13 @@ class ComponentHandler {
                         guildPlayer.player.queue.clear();
                         guildPlayer.player.shoukaku.stopTrack();
                         await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Playback stopped — synced lyrics session closed.');
-                        await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)('Stopped music and cleared queue.'))).catch(() => { });
+                        await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)(`${emojis_1.default.music.stop} Stopped and cleared queue. (24/7 active — bot stays in VC)`))).catch(() => { });
                     }
                     else {
                         guildPlayer.player.destroy();
                         this.client.guildPlayers.delete(interaction.guildId);
                         await (0, lyrics_2.endLyricsSessions)(this.client, interaction.guildId, 'Bot left the voice channel — synced lyrics session closed.');
-                        await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)('Stopped music and left channel.'))).catch(() => { });
+                        await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)(`${emojis_1.default.music.stop} **Stopped** by ${interaction.user} — bot left the channel.`))).catch(() => { });
                     }
                     return;
                 }
@@ -367,13 +382,17 @@ class ComponentHandler {
                     else
                         nextLoop = 'none';
                     guildPlayer.player.setLoop(nextLoop);
+                    const loopLabel = nextLoop === 'none' ? 'Off' : nextLoop === 'track' ? 'Track' : 'Queue';
+                    toastText = `${emojis_1.default.music.loop} **Loop: ${loopLabel}** — set by ${interaction.user}`;
                     break;
                 }
                 case 'shuffle':
                     guildPlayer.player.queue.shuffle();
+                    toastText = `${emojis_1.default.music.shuffle} **Queue shuffled** by ${interaction.user}`;
                     break;
                 case 'autoplay':
                     guildPlayer.autoplay = !guildPlayer.autoplay;
+                    toastText = `${emojis_1.default.music.autoplay} **Autoplay: ${guildPlayer.autoplay ? 'On' : 'Off'}** — set by ${interaction.user}`;
                     break;
                 case 'heart': {
                     const track = guildPlayer?.player.queue.current;
@@ -405,6 +424,11 @@ class ComponentHandler {
                 default:
                     break;
             }
+            // Send ephemeral toast so the user knows their action was received
+            if (toastText) {
+                await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.success)(toastText))).catch(() => { });
+            }
+            // Refresh the NowPlaying panel to reflect the new state (pause/loop/autoplay etc.)
             if (guildPlayer && guildPlayer.player.queue.current) {
                 const loopMode = guildPlayer.player.loop === 'none' ? 0 : guildPlayer.player.loop === 'track' ? 1 : 2;
                 const ui = (0, playerEmbed_1.buildPlayerUI)(guildPlayer.player.guildId, guildPlayer.player.queue.current, guildPlayer.player.position, guildPlayer.player.playing, loopMode, guildPlayer.player.queue.length, guildPlayer.player.volume, guildPlayer.autoplay);
@@ -533,17 +557,21 @@ class ComponentHandler {
                     return;
                 }
 
-                // Retrieve tracks from RAM cache (TTL: 60s — set in search.js)
+                // Retrieve tracks from RAM cache
                 const tracks = this.client.cache.get(searchId);
                 if (!tracks || !tracks.length) {
                     await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('Search results have expired. Please run the search again.')));
                     return;
                 }
 
+                // Defer NOW — player creation (Lavalink connect) can be slow and will
+                // exceed Discord's 3-second acknowledgement window without this.
+                await interaction.deferUpdate().catch(() => { });
+
                 const selectedIdx = parseInt(interaction.values[0]);
                 const selectedTrack = tracks[selectedIdx];
                 if (!selectedTrack) {
-                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('Invalid selection. Please try searching again.')));
+                    await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.error)('Invalid selection. Please try searching again.')));
                     return;
                 }
 
@@ -551,12 +579,11 @@ class ComponentHandler {
                 const member = interaction.member;
                 const voiceChannel = member?.voice?.channel;
                 if (!voiceChannel) {
-                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('You need to be in a voice channel to play music!')));
+                    await interaction.followUp((0, containers_1.ephemeralCV2)((0, containers_1.error)('You need to be in a voice channel to play music!')));
                     return;
                 }
 
-                // Get or re-create the player (search command creates it at search time,
-                // but it may have been destroyed while the user was deciding)
+                // Get or re-create the player
                 let player = this.client.music.players.get(interaction.guildId);
                 if (!player) {
                     player = await this.client.music.createPlayer({
@@ -584,10 +611,11 @@ class ComponentHandler {
 
                 const prefix = await resolvePrefix(this.client, interaction.guildId, interaction.user.id);
                 const c = (0, containers_1.containerWithDivider)([
-                    `**Added to queue** \`#${position}\`\n${clickableTitle(selectedTrack.title, selectedTrack.uri, Infinity)}`,
+                    `**Added to queue** \`#${position}\`\n${clickableTitle(selectedTrack.title || selectedTrack.info?.title, selectedTrack.uri || selectedTrack.info?.uri, Infinity)}`,
                     `-# Not the right track? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``
                 ]);
-                await interaction.update((0, containers_1.cv2)(c));
+                // editReply since we already deferUpdate()'d above
+                await interaction.editReply((0, containers_1.cv2)(c));
 
                 // Start playback only if nothing is currently playing/paused
                 if (!player.playing && !player.paused) {

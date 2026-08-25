@@ -21,7 +21,7 @@ class GuildPlayer {
         this.filters = new FilterManager_1.FilterManager(player);
         this.lastActivity = Date.now();
     }
-    async resendPanel(client) {
+    async resendPanel(client, overrideTrack = null) {
         if (!this.textChannelId)
             return;
         const channel = client.channels.cache.get(this.textChannelId) || await client.channels.fetch(this.textChannelId).catch(() => null);
@@ -34,7 +34,10 @@ class GuildPlayer {
         }
         const { buildPlayerUI } = require('../ui/playerEmbed');
         const { cv2 } = require('../ui/containers');
-        const track = this.player.queue.current;
+        // Use the explicitly-passed track (from the playerStart event arg) when available.
+        // Falling back to player.queue.current risks showing stale data if Kazagumo
+        // hasn't updated current yet at the moment the event fires.
+        const track = overrideTrack || this.player.queue.current;
         if (!track)
             return;
         const loopMode = this.player.loop === 'none' ? 0 : this.player.loop === 'track' ? 1 : 2;
