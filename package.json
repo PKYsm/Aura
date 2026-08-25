@@ -1,0 +1,32 @@
+{
+  "name": "aura",
+  "version": "1.0.0",
+  "description": "Aura — a modern multi-source Discord music bot powered by Lavalink & Shoukaku.",
+  "main": "index.js",
+  "type": "commonjs",
+  "author": {
+    "name": "RasaVedic",
+    "email": "RasaVedic@Gmail.com",
+    "url": "https://github.com/PKYsm"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PKYsm/Aura"
+  },
+  "keywords": ["discord", "music-bot", "lavalink", "shoukaku", "aura"],
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "shoukaku": "^4.1.1",
+    "ioredis": "^5.4.1",
+    "dotenv": "^16.4.5",
+    "chalk": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
