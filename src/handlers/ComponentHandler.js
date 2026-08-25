@@ -15,6 +15,9 @@ const playerEmbed_1 = require("../ui/playerEmbed");
 const emojis_1 = __importDefault(require("../utils/emojis"));
 const botInfo_1 = __importDefault(require("../config/botInfo"));
 const lyrics_2 = require("../commands/music/lyrics");
+const { GuildPlayer } = require("../managers/PlayerManager");
+const { clickableTitle } = require("../utils/trackTitle");
+const { resolvePrefix } = require("../utils/resolvePrefix");
 class ComponentHandler {
     client;
     constructor(client) {
@@ -517,6 +520,79 @@ class ComponentHandler {
                 }
                 catch { }
                 await interaction.update((0, containers_1.cv2)((0, containers_1.container)(`Successfully granted Premium access to <@${targetUserId}> (${timeStr}).`, { title: 'Aura Premium', color: 'success' })));
+                return;
+            }
+            if (action === 'search_select') {
+                // searchId format: search_{userId}_{timestamp}
+                const searchId = parts[2];
+                const originalUserId = searchId?.split('_')[1];
+
+                // Only the user who triggered the search can select a track
+                if (originalUserId && interaction.user.id !== originalUserId) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('Only the person who searched can select a track.')));
+                    return;
+                }
+
+                // Retrieve tracks from RAM cache (TTL: 60s — set in search.js)
+                const tracks = this.client.cache.get(searchId);
+                if (!tracks || !tracks.length) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('Search results have expired. Please run the search again.')));
+                    return;
+                }
+
+                const selectedIdx = parseInt(interaction.values[0]);
+                const selectedTrack = tracks[selectedIdx];
+                if (!selectedTrack) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('Invalid selection. Please try searching again.')));
+                    return;
+                }
+
+                // Voice channel check
+                const member = interaction.member;
+                const voiceChannel = member?.voice?.channel;
+                if (!voiceChannel) {
+                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('You need to be in a voice channel to play music!')));
+                    return;
+                }
+
+                // Get or re-create the player (search command creates it at search time,
+                // but it may have been destroyed while the user was deciding)
+                let player = this.client.music.players.get(interaction.guildId);
+                if (!player) {
+                    player = await this.client.music.createPlayer({
+                        guildId: interaction.guildId,
+                        textId: interaction.channelId,
+                        voiceId: voiceChannel.id,
+                        volume: 100,
+                    });
+                }
+
+                let guildPlayer = this.client.guildPlayers.get(interaction.guildId);
+                if (!guildPlayer) {
+                    guildPlayer = new GuildPlayer(player);
+                    this.client.guildPlayers.set(interaction.guildId, guildPlayer);
+                }
+                guildPlayer.textChannelId = interaction.channelId;
+                guildPlayer.isStopped = false;
+
+                // Add the selected track to queue
+                player.queue.add(selectedTrack);
+                const position = player.queue.length;
+
+                // Invalidate the cache — one-time use only
+                this.client.cache.del(searchId);
+
+                const prefix = await resolvePrefix(this.client, interaction.guildId, interaction.user.id);
+                const c = (0, containers_1.containerWithDivider)([
+                    `**Added to queue** \`#${position}\`\n${clickableTitle(selectedTrack.title, selectedTrack.uri, Infinity)}`,
+                    `-# Not the right track? Use \`${prefix}search\` or change the search engine with \`${prefix}engine\``
+                ]);
+                await interaction.update((0, containers_1.cv2)(c));
+
+                // Start playback only if nothing is currently playing/paused
+                if (!player.playing && !player.paused) {
+                    player.play();
+                }
                 return;
             }
             if (action === 'np' || action === 'gnp') {

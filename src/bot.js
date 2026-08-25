@@ -20,7 +20,7 @@ class AuraClient extends Client {
     commands           = new Collection();
     aliases            = new Collection();
     db                 = new JsonDatabase();
-    cache              = new NodeCache({ stdTTL: 60, checkperiod: 120, maxKeys: 1000 });
+    cache              = new NodeCache({ stdTTL: 120, checkperiod: 60, maxKeys: 1000 }); // 120s — enough for user to pick from search results
     music;
     guildPlayers       = new Collection();
     lyricSyncSessions  = new Collection();

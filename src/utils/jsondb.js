@@ -287,11 +287,11 @@ class JsonDatabase {
      * If redis is null (env vars missing), this is a safe no-op.
      *
      * Cache TTLs (Redis / RAM):
-     *   guildConfig   : 1 h  / 5 min  — prefix + nameplate per guild
+     *   guildConfig   : 6 h  / 5 min  — prefix + nameplate per guild
      *   premiumUser   : 12 h / 5 min  — premium status per user
      *   userConfig    : 6 h  / 5 min  — search engine per user
      *   blacklist     : 24 h / 5 min  — blacklist per user
-     *   noPrefixUser  : 1 h  / 5 min  — no-prefix access per user
+     *   noPrefixUser  : 24 h / 5 min  — no-prefix access per user  (was 1h — caused expiry on restart)
      *   adminUser     : 24 h / 5 min  — bot admin status per user
      */
     useRedis(redis, ramCache) {
@@ -302,7 +302,7 @@ class JsonDatabase {
         this.guildConfig = makeCachedModel(
             this.guildConfig, redis, ramCache,
             (w) => w?.guildId ? `aura:gc:${w.guildId}` : null,
-            3600
+            21600
         );
 
         // userId-keyed
@@ -324,7 +324,7 @@ class JsonDatabase {
         this.noPrefixUser = makeCachedModel(
             this.noPrefixUser, redis, ramCache,
             (w) => w?.userId ? `aura:np:${w.userId}` : null,
-            3600
+            86400
         );
         this.adminUser = makeCachedModel(
             this.adminUser, redis, ramCache,
