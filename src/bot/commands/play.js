@@ -27,16 +27,16 @@ module.exports = {
 
     await interaction.deferReply();
 
-    const session = await playerManager.createSession(
-      shoukaku,
-      interaction.guild,
-      voiceChannel.id,
-      interaction.channelId
-    );
-
+    // VC join aur track resolve dono ek doosre pe depend nahi karte,
+    // isliye parallel chalate hain — Discord voice handshake ka wait
+    // Lavalink search ke saath overlap ho jata hai, latency kam hoti hai.
     const node = [...shoukaku.nodes.values()][0];
     const searchQuery = resolveSearchQuery(query);
-    const result = await node.rest.resolve(searchQuery);
+
+    const [session, result] = await Promise.all([
+      playerManager.createSession(shoukaku, interaction.guild, voiceChannel.id, interaction.channelId),
+      node.rest.resolve(searchQuery),
+    ]);
 
     if (!result || !result.data || (Array.isArray(result.data) && result.data.length === 0)) {
       return interaction.editReply(
