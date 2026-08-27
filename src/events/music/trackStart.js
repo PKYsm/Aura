@@ -15,11 +15,13 @@ exports.default = {
         if (!guildPlayer) {
             guildPlayer = new PlayerManager_1.GuildPlayer(player);
             client.guildPlayers.set(player.guildId, guildPlayer);
+        } else {
+            // Keep the player reference current. A new Kazagumo player object is created
+            // on every createPlayer() call (e.g. bot rejoined); without this update the
+            // buttons would read stale queue/playing state from the old player object.
+            guildPlayer.player = player;
         }
-        // ALWAYS sync textChannelId from the Kazagumo player's textId.
-        // This covers the case where guildPlayer was freshly created here (textChannelId = null),
-        // or where it existed but textChannelId got cleared (e.g. after a playerClosed/reconnect).
-        // player.textId is set by createPlayer() in play.js, so it is always authoritative.
+        // Sync textChannelId from player.textId if not already set
         if (!guildPlayer.textChannelId && player.textId) {
             guildPlayer.textChannelId = player.textId;
         }

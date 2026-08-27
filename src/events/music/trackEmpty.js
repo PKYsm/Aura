@@ -40,10 +40,38 @@ exports.default = {
         }
         const botId = client.user.id;
         const c = (0, containers_1.container)("Queue have been ended");
-        const row = new discord_js_1.ActionRowBuilder().addComponents(new discord_js_1.ButtonBuilder().setLabel("Invite Bot").setURL(`https://discord.com/api/oauth2/authorize?client_id=${botId}&permissions=8&scope=bot%20applications.commands`).setStyle(discord_js_1.ButtonStyle.Link), new discord_js_1.ButtonBuilder().setLabel("Support").setURL("https://discord.gg/Vx43JXddFD").setStyle(discord_js_1.ButtonStyle.Link));
+        const row = new discord_js_1.ActionRowBuilder().addComponents(
+            new discord_js_1.ButtonBuilder()
+                .setLabel("Invite Bot")
+                .setURL(`https://discord.com/api/oauth2/authorize?client_id=${botId}&permissions=8&scope=bot%20applications.commands`)
+                .setStyle(discord_js_1.ButtonStyle.Link),
+            new discord_js_1.ButtonBuilder()
+                .setLabel("Support")
+                .setURL("https://discord.gg/Vx43JXddFD")
+                .setStyle(discord_js_1.ButtonStyle.Link)
+        );
         c.addActionRowComponents(row);
-        if (player.textId) {
-            const channel = client.channels.cache.get(player.textId);
+
+        // Bug 1 fix: guildPlayer.textChannelId is updated on every play command so it
+        // always points to the channel where the user last ran a command.
+        // player.textId is set only at createPlayer() time and may be stale.
+        const textChannelId = guildPlayer?.textChannelId || player.textId;
+
+        // Delete the NowPlaying panel (trackEnd deletes it between tracks, but if the
+        // last track ends and playerEnd fires before playerEmpty, it may already be gone).
+        if (guildPlayer?.playerMessageId && textChannelId) {
+            const panelChannel = client.channels.cache.get(textChannelId)
+                || await client.channels.fetch(textChannelId).catch(() => null);
+            if (panelChannel) {
+                const msg = await panelChannel.messages.fetch(guildPlayer.playerMessageId).catch(() => null);
+                if (msg) await msg.delete().catch(() => { });
+            }
+            guildPlayer.playerMessageId = null;
+        }
+
+        if (textChannelId) {
+            const channel = client.channels.cache.get(textChannelId)
+                || await client.channels.fetch(textChannelId).catch(() => null);
             if (channel) {
                 await channel.send((0, containers_1.cv2)(c)).catch(() => { });
             }

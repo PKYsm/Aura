@@ -12,6 +12,21 @@ exports.default = {
         const guildPlayer = client.guildPlayers.get(player.guildId);
         if (guildPlayer) {
             guildPlayer.updateActivity();
+            // Delete the NowPlaying panel immediately when the track ends.
+            // trackStart will send a fresh one for the next track. This prevents
+            // the old card from lingering between tracks.
+            if (guildPlayer.playerMessageId) {
+                const textChannelId = guildPlayer.textChannelId || player.textId;
+                if (textChannelId) {
+                    const channel = client.channels.cache.get(textChannelId)
+                        || await client.channels.fetch(textChannelId).catch(() => null);
+                    if (channel) {
+                        const msg = await channel.messages.fetch(guildPlayer.playerMessageId).catch(() => null);
+                        if (msg) await msg.delete().catch(() => { });
+                    }
+                }
+                guildPlayer.playerMessageId = null; // cleared so resendPanel won't double-delete
+            }
         }
         (0, presence_1.updateBotPresence)(client);
         if (player.voiceId) {

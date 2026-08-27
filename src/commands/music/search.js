@@ -53,13 +53,25 @@ exports.default = {
             return interaction.editReply((0, containers_1.ephemeralCV2)((0, containers_1.error)('No results found for that query.')));
         }
 
+        // Plain requester — a full Discord.js User object has getters (e.g. defaultAvatarURL)
+        // that access this.client.rest. When Kazagumo/Shoukaku serialises the track, a
+        // deserialized copy of the user is created without a Discord client reference,
+        // causing "Cannot read properties of undefined (reading 'rest')" at playTrack time.
+        const requester = {
+            id: interaction.user.id,
+            username: interaction.user.username,
+            displayName: interaction.user.displayName || interaction.user.username,
+            discriminator: interaction.user.discriminator || '0',
+            avatar: interaction.user.avatar || null,
+            toString() { return `<@${this.id}>`; },
+        };
+
         // Wrap raw Lavalink tracks into KazagumoTrack objects so queue.add() works
         let kazagumoTracks;
         if (KazagumoTrack) {
-            kazagumoTracks = top10.map(t => new KazagumoTrack(t, interaction.user));
+            kazagumoTracks = top10.map(t => new KazagumoTrack(t, requester));
         } else {
-            // Fallback: attach requester directly on the raw track object
-            kazagumoTracks = top10.map(t => ({ ...t, requester: interaction.user }));
+            kazagumoTracks = top10.map(t => ({ ...t, requester }));
         }
 
         // Cache the track list — ComponentHandler picks it up on select
@@ -115,11 +127,19 @@ exports.default = {
         const top10 = rawTracks.slice(0, 10);
         if (!top10.length) return message.reply((0, containers_1.cv2)((0, containers_1.error)('No results found.')));
 
+        const prefixRequester = {
+            id: message.author.id,
+            username: message.author.username,
+            displayName: message.author.displayName || message.author.username,
+            discriminator: message.author.discriminator || '0',
+            avatar: message.author.avatar || null,
+            toString() { return `<@${this.id}>`; },
+        };
         let kazagumoTracks;
         if (KazagumoTrack) {
-            kazagumoTracks = top10.map(t => new KazagumoTrack(t, message.author));
+            kazagumoTracks = top10.map(t => new KazagumoTrack(t, prefixRequester));
         } else {
-            kazagumoTracks = top10.map(t => ({ ...t, requester: message.author }));
+            kazagumoTracks = top10.map(t => ({ ...t, requester: prefixRequester }));
         }
 
         const searchId = `search_${message.author.id}_${Date.now()}`;

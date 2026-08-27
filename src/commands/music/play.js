@@ -40,6 +40,10 @@ exports.default = {
             guildPlayer = new PlayerManager_1.GuildPlayer(player);
             client.guildPlayers.set(interaction.guildId, guildPlayer);
         }
+        // ALWAYS update the player reference. If the bot rejoined voice, createPlayer()
+        // returns a new Kazagumo player object. Without this, guildPlayer.player is stale
+        // and button checks (queue.current, playing) read from the old dead object.
+        guildPlayer.player = player;
         guildPlayer.textChannelId = interaction.channelId;
         guildPlayer.isStopped = false;
         const userConfig = await client.db.userConfig.findUnique({ where: { userId: interaction.user.id } });
@@ -78,7 +82,15 @@ exports.default = {
                         rawTracks = [attempt.data];
                     if (rawTracks.length > 0) {
                         // Convert raw Lavalink tracks to Kazagumo tracks manually
-                        kazaTracks = rawTracks.map((t) => new kazagumo_1.KazagumoTrack(t, interaction.user));
+                        const requester = {
+                            id: interaction.user.id,
+                            username: interaction.user.username,
+                            displayName: interaction.user.displayName || interaction.user.username,
+                            discriminator: interaction.user.discriminator || '0',
+                            avatar: interaction.user.avatar || null,
+                            toString() { return `<@${this.id}>`; },
+                        };
+                        kazaTracks = rawTracks.map((t) => new kazagumo_1.KazagumoTrack(t, requester));
                         break;
                     }
                 }

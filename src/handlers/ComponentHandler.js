@@ -310,11 +310,16 @@ class ComponentHandler {
             // ── Check BEFORE deferring so we can still reply() with an ephemeral error ──
             // Silently returning after deferUpdate() leaves the interaction in a broken
             // "thinking" state and gives the user zero feedback.
-            if (guildPlayer && !guildPlayer.player.queue.current) {
-                if (musicActions.includes(action)) {
-                    await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('No track is currently playing.')));
-                    return;
-                }
+            // Player is genuinely idle only when NOT playing, NOT paused, AND nothing queued.
+            // The old '!queue.current' check fired during the brief gap between tracks
+            // (playerEnd fired, playerStart hasn't yet), killing buttons mid-playlist.
+            const playerIdle = guildPlayer &&
+                !guildPlayer.player.playing &&
+                !guildPlayer.player.paused &&
+                !guildPlayer.player.queue.current;
+            if (playerIdle && musicActions.includes(action)) {
+                await interaction.reply((0, containers_1.ephemeralCV2)((0, containers_1.error)('No track is currently playing.')));
+                return;
             }
             await interaction.deferUpdate().catch(() => { });
             // Toast message shown to the button-presser only (ephemeral followUp)
